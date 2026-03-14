@@ -2,9 +2,8 @@
 
 import { TopBar } from '@/components/layout/TopBar';
 import { currentUser } from '@/data/mock-data';
-import { User, Bell, Shield, Sliders, Link2, Monitor, LogOut, Plus, Pencil, ChevronDown, Check, X, RefreshCw, ExternalLink, AlertTriangle } from 'lucide-react';
+import { User, Bell, Shield, Sliders, Link2, Monitor, Plus, Pencil, ChevronDown, Check, X, RefreshCw, ExternalLink, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 import type { UserRole } from '@/types';
 
@@ -115,7 +114,6 @@ const initialNotifChannels: NotifChannel[] = [
 
 
 export default function SettingsPage() {
-  const router = useRouter();
   const [active, setActive] = useState<SettingsSection>('profile');
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>(initialTeamUsers);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -151,18 +149,6 @@ export default function SettingsPage() {
       ...ch,
       items: ch.items.map((it, ii) => ii === itemIdx ? { ...it, [field]: !it[field] } : it),
     } : ch));
-  };
-
-  const handleSignOut = () => {
-    localStorage.removeItem('auth');
-    sessionStorage.removeItem('auth');
-
-    toast({
-      title: 'Signed out',
-      description: 'Your session has ended.',
-    });
-
-    router.push('/auth/login');
   };
 
   const inputClass = "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
@@ -601,12 +587,6 @@ export default function SettingsPage() {
                   <span className="text-sm text-foreground">Passwordless email</span>
                 </div>
               </div>
-              <button
-                onClick={handleSignOut}
-                className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
-              >
-                <LogOut className="h-4 w-4" /> Sign Out
-              </button>
             </div>
           )}
         </div>
