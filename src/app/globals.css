@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Kinetica OS — Dark-First Premium Med-Tech */
+    --background: 222 47% 4%;
+    --foreground: 210 40% 93%;
+
+    --card: 222 47% 7%;
+    --card-foreground: 210 40% 93%;
+
+    --popover: 222 47% 7%;
+    --popover-foreground: 210 40% 93%;
+
+    --primary: 199 89% 48%;
+    --primary-foreground: 222 47% 4%;
+
+    --secondary: 222 47% 11%;
+    --secondary-foreground: 210 40% 80%;
+
+    --muted: 222 30% 14%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 263 70% 50%;
+    --accent-foreground: 210 40% 95%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 142 71% 10%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 92% 10%;
+
+    --border: 222 30% 12%;
+    --input: 222 30% 14%;
+    --ring: 199 89% 48%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 210 20% 65%;
+    --sidebar-primary: 199 89% 48%;
+    --sidebar-primary-foreground: 222 47% 4%;
+    --sidebar-accent: 222 47% 9%;
+    --sidebar-accent-foreground: 210 40% 90%;
+    --sidebar-border: 222 30% 10%;
+    --sidebar-ring: 199 89% 48%;
+
+    /* Custom tokens */
+    --surface: 222 47% 7%;
+    --surface-raised: 222 47% 11%;
+    --surface-overlay: 222 47% 14%;
+    --kinetica-cyan: 199 89% 48%;
+    --kinetica-purple: 263 70% 50%;
+    --chart-1: 199 89% 48%;
+    --chart-2: 142 71% 45%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 263 70% 50%;
+    --chart-5: 0 84% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Mono for data values */
+  .font-data {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .shadow-kinetica {
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 6px -1px rgba(0,0,0,0.3), 0 2px 4px -2px rgba(0,0,0,0.3);
+  }
+
+  .shadow-kinetica-lg {
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -4px rgba(0,0,0,0.3);
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px -5px hsl(199 89% 48% / 0.3);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 20px -5px hsl(142 71% 45% / 0.3);
+  }
+
+  .glow-destructive {
+    box-shadow: 0 0 20px -5px hsl(0 84% 60% / 0.3);
+  }
+
+  .glow-warning {
+    box-shadow: 0 0 20px -5px hsl(38 92% 50% / 0.3);
+  }
+
+  .text-label {
+    @apply text-[13px] font-medium tracking-wide uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
