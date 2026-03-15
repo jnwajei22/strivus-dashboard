@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -13,27 +13,201 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
+  LogOut,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 
-const navItems = [
-  { label: "Overview", path: "/", icon: LayoutDashboard },
-  { label: "Patients", path: "/patients", icon: Users },
-  { label: "Devices", path: "/devices", icon: Cpu },
-  { label: "Firmware", path: "/firmware", icon: Package },
-  { label: "Logs", path: "/logs", icon: ScrollText },
-  { label: "Settings", path: "/settings", icon: Settings },
-];
-
-// Temporary placeholder until real auth/user data is wired in
-const currentUser = {
-  name: "Demo User",
-  role: "admin_user",
+type MeResponse = {
+  user: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+    status: string | null;
+    emailVerifiedAt?: string | null;
+    lastLoginAt?: string | null;
+    role: {
+      id: string;
+      name: string;
+    } | null;
+    profile?: {
+      jobTitle: string | null;
+      avatarUrl: string | null;
+      phone: string | null;
+      department: string | null;
+      timezone: string | null;
+    };
+    settings?: {
+      theme: string;
+      sidebarCollapsed: boolean;
+      defaultDashboardView: string | null;
+      timezone: string | null;
+    };
+  } | null;
 };
+
+type NavItem = {
+  label: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const navItems: NavItem[] = [
+  {
+    label: "Overview",
+    path: "/overview",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Patients",
+    path: "/patients",
+    icon: Users,
+  },
+  {
+    label: "Devices",
+    path: "/devices",
+    icon: Cpu,
+  },
+  {
+    label: "Firmware",
+    path: "/firmware",
+    icon: Package,
+  },
+  {
+    label: "Logs",
+    path: "/logs",
+    icon: ScrollText,
+  },
+  {
+    label: "Settings",
+    path: "/settings",
+    icon: Settings,
+  },
+];
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [currentUser, setCurrentUser] = useState<MeResponse["user"]>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
   const pathname = usePathname();
+  const router = useRouter();
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCurrentUser() {
+      try {
+        setLoadingUser(true);
+
+        const res = await fetch("/api/auth/me", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        if (res.status === 401) {
+          if (isMounted) {
+            setCurrentUser(null);
+          }
+          return;
+        }
+
+        const data: MeResponse = await res.json();
+
+        if (!res.ok) {
+          throw new Error("Failed to load current user");
+        }
+
+        if (isMounted) {
+          setCurrentUser(data.user);
+          if (typeof data.user?.settings?.sidebarCollapsed === "boolean") {
+            setCollapsed(data.user.settings.sidebarCollapsed);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch /api/auth/me:", error);
+
+        if (isMounted) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingUser(false);
+        }
+      }
+    }
+
+    loadCurrentUser();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowUserMenu(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      const res = await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to sign out");
+      }
+
+      toast({
+        title: "Signed out",
+        description: "Your session has ended.",
+      });
+
+      setShowUserMenu(false);
+      setCurrentUser(null);
+      router.push("/auth/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout error:", error);
+
+      toast({
+        title: "Sign out failed",
+        description: "Could not end your session cleanly.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const visibleNavItems = useMemo(() => {
+    return navItems;
+  }, []);
+
+  const userName =
+    currentUser?.displayName ||
+    [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") ||
+    currentUser?.email ||
+    "User";
+
+  const userRole = currentUser?.role?.name || currentUser?.status || "member";
 
   return (
     <aside
@@ -60,11 +234,8 @@ export function AppSidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
-        {navItems.map((item) => {
-          const isActive =
-            item.path === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.path);
+        {visibleNavItems.map((item) => {
+          const isActive = pathname.startsWith(item.path);
 
           return (
             <Link
@@ -86,13 +257,39 @@ export function AppSidebar() {
 
       <div className="border-t border-sidebar-border p-3">
         {!collapsed && (
-          <div className="mb-3 rounded-lg bg-sidebar-accent px-3 py-2.5">
-            <p className="text-xs font-medium text-sidebar-accent-foreground truncate">
-              {currentUser.name}
-            </p>
-            <p className="text-[10px] text-sidebar-foreground capitalize truncate">
-              {currentUser.role.replace("_", " ")}
-            </p>
+          <div ref={userMenuRef} className="relative mb-3">
+            <button
+              onClick={() => setShowUserMenu((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2.5 text-left hover:bg-sidebar-accent/80 transition-colors"
+              disabled={loadingUser}
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-sidebar-accent-foreground truncate">
+                  {loadingUser ? "Loading..." : userName}
+                </p>
+                <p className="text-[10px] text-sidebar-foreground capitalize truncate">
+                  {loadingUser ? "Fetching user" : userRole}
+                </p>
+              </div>
+              <ChevronUp
+                className={cn(
+                  "h-4 w-4 shrink-0 text-sidebar-foreground transition-transform",
+                  showUserMenu ? "rotate-0" : "rotate-180"
+                )}
+              />
+            </button>
+
+            {showUserMenu && !loadingUser && (
+              <div className="absolute bottom-full left-0 mb-2 w-full overflow-hidden rounded-lg border border-sidebar-border bg-card shadow-kinetica z-50">
+                <button
+                  onClick={handleSignOut}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-sidebar-accent transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -23,18 +23,43 @@ export default function SignIn() {
 
     setLoading(true);
 
-    // Temporary mock submit
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    try {
+      const res = await fetch("/api/auth/request-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+        }),
+      });
 
-    setLoading(false);
+      const data = await res.json();
 
-    toast({
-      title: "Login code sent",
-      description: `A 6-digit code has been sent to ${email}`,
-    });
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send login code");
+      }
 
-    router.push(`/auth/verification?email=${encodeURIComponent(email)}`);
+      toast({
+        title: "Login code sent",
+        description: `A 6-digit code has been sent to ${email}`,
+      });
+
+      router.push(`/auth/verification?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to send login code";
+
+      toast({
+        title: "Request failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -57,7 +82,7 @@ export default function SignIn() {
                 STRIVUS
               </h1>
               <p className="text-xs text-muted-foreground tracking-widest uppercase">
-                Kinetica Platform
+                Kinetica Dashboard
               </p>
             </div>
           </div>
@@ -75,8 +100,6 @@ export default function SignIn() {
 
           <div className="mt-10 space-y-3">
             {[
-              "No passwords to remember or reset",
-              "2-week persistent sessions",
               "Role-based access control",
             ].map((item) => (
               <div
@@ -162,7 +185,7 @@ export default function SignIn() {
                 href="/auth/signup"
                 className="text-primary hover:underline font-medium"
               >
-                Request access
+                Sign Up
               </Link>
             </p>
           </div>

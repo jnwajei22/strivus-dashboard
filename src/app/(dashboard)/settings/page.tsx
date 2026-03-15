@@ -2,8 +2,20 @@
 
 import { TopBar } from '@/components/layout/TopBar';
 import { currentUser } from '@/data/mock-data';
-import { User, Bell, Shield, Sliders, Link2, Monitor, Plus, Pencil, ChevronDown, Check, X, RefreshCw, ExternalLink, AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
+import {
+  User,
+  Bell,
+  Shield,
+  Sliders,
+  Link2,
+  Monitor,
+  Plus,
+  Pencil,
+  Check,
+  X,
+  RefreshCw,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 import type { UserRole } from '@/types';
 
@@ -18,15 +30,58 @@ const settingsSections = [
 
 type SettingsSection = typeof settingsSections[number]['id'];
 
-// Role definitions
-const roleDefinitions: { role: UserRole; label: string; description: string; patients: string; devices: string; firmware: string; settings: string; logs: string }[] = [
-  { role: 'super_admin', label: 'Super Admin', description: 'Full platform access. Can manage users, devices, firmware, and all settings.', patients: 'Full', devices: 'Full', firmware: 'Full', settings: 'Full', logs: 'Full' },
-  { role: 'clinician', label: 'Clinician / Provider', description: 'Manages patients and exercises. Can view devices and trigger actions. Read-only firmware.', patients: 'Full', devices: 'Read + Actions', firmware: 'Read', settings: 'Profile Only', logs: 'Read + Create' },
-  { role: 'operations', label: 'Operations / Support', description: 'Manages devices, firmware deployments, and system configuration. Read-only patients.', patients: 'Read', devices: 'Full', firmware: 'Full', settings: 'System', logs: 'Full' },
-  { role: 'viewer', label: 'Viewer / Read-only', description: 'Can view all data but cannot make changes. Suitable for auditing or observation.', patients: 'Read', devices: 'Read', firmware: 'Read', settings: 'Profile Only', logs: 'Read' },
+const roleDefinitions: {
+  role: UserRole;
+  label: string;
+  description: string;
+  patients: string;
+  devices: string;
+  firmware: string;
+  settings: string;
+  logs: string;
+}[] = [
+  {
+    role: 'super_admin',
+    label: 'Super Admin',
+    description: 'Full platform access. Can manage users, devices, firmware, and all settings.',
+    patients: 'Full',
+    devices: 'Full',
+    firmware: 'Full',
+    settings: 'Full',
+    logs: 'Full',
+  },
+  {
+    role: 'clinician',
+    label: 'Clinician / Provider',
+    description: 'Manages patients and exercises. Can view devices and trigger actions. Read-only firmware.',
+    patients: 'Full',
+    devices: 'Read + Actions',
+    firmware: 'Read',
+    settings: 'Profile Only',
+    logs: 'Read + Create',
+  },
+  {
+    role: 'operations',
+    label: 'Operations / Support',
+    description: 'Manages devices, firmware deployments, and system configuration. Read-only patients.',
+    patients: 'Read',
+    devices: 'Full',
+    firmware: 'Full',
+    settings: 'System',
+    logs: 'Full',
+  },
+  {
+    role: 'viewer',
+    label: 'Viewer / Read-only',
+    description: 'Can view all data but cannot make changes. Suitable for auditing or observation.',
+    patients: 'Read',
+    devices: 'Read',
+    firmware: 'Read',
+    settings: 'Profile Only',
+    logs: 'Read',
+  },
 ];
 
-// Mock team users
 interface TeamUser {
   id: string;
   name: string;
@@ -41,10 +96,8 @@ const initialTeamUsers: TeamUser[] = [
   { id: 'u-002', name: 'Marcus Rivera', email: 'marcus.r@strivus.com', role: 'operations', lastActive: '2026-03-14T07:15:00Z', status: 'active' },
   { id: 'u-003', name: 'Dr. Emily Thornton', email: 'emily.t@peakpt.com', role: 'clinician', lastActive: '2026-03-13T16:00:00Z', status: 'active' },
   { id: 'u-004', name: 'James Park', email: 'james.p@strivus.com', role: 'viewer', lastActive: '2026-03-12T10:00:00Z', status: 'active' },
-  { id: 'u-005', name: 'Pending Invite', email: 'ops2@strivus.com', role: 'operations', lastActive: '', status: 'invited' },
 ];
 
-// Integration data
 interface Integration {
   name: string;
   description: string;
@@ -71,7 +124,6 @@ const statusDot: Record<string, string> = {
   disabled: 'bg-muted-foreground/40',
 };
 
-// Notification config
 interface NotifChannel {
   label: string;
   items: { label: string; email: boolean; push: boolean; inApp: boolean }[];
@@ -111,7 +163,31 @@ const initialNotifChannels: NotifChannel[] = [
   },
 ];
 
+type ApiRole = {
+  id: string;
+  name: string;
+  key?: string;
+};
 
+type ApiInvite = {
+  id: string;
+  email: string;
+  role_id: string | null;
+  invited_by_user_id: string | null;
+  status: 'pending' | 'accepted' | 'revoked' | string;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  role_name?: string | null;
+  invited_by_email?: string | null;
+};
+
+const roleKeyToDbName: Record<UserRole, string> = {
+  super_admin: 'Super Admin',
+  clinician: 'Clinician / Provider',
+  operations: 'Operations / Support',
+  viewer: 'Viewer / Read-only',
+};
 
 export default function SettingsPage() {
   const [active, setActive] = useState<SettingsSection>('profile');
@@ -122,26 +198,126 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState<UserRole>('viewer');
   const [notifChannels, setNotifChannels] = useState(initialNotifChannels);
 
+  const [roles, setRoles] = useState<ApiRole[]>([]);
+  const [invites, setInvites] = useState<ApiInvite[]>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+
+  const loadRoles = async () => {
+    try {
+      const res = await fetch('/api/auth/roles', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load roles');
+
+      const data = await res.json();
+      setRoles(data.roles ?? []);
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: 'Failed to load roles',
+        description: 'Could not load available roles.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const loadInvites = async () => {
+    try {
+      setInvitesLoading(true);
+
+      const res = await fetch('/api/auth/invites', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load invites');
+
+      const data = await res.json();
+      setInvites(data.invites ?? []);
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: 'Failed to load invites',
+        description: 'Could not load pending invites.',
+        variant: 'destructive',
+      });
+    } finally {
+      setInvitesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRoles();
+    loadInvites();
+  }, []);
+
   const handleRoleChange = (userId: string, newRole: UserRole) => {
     setTeamUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
     setEditingUserId(null);
     toast({ title: 'Role updated', description: `User role changed to ${newRole.replace('_', ' ')}.` });
   };
 
-  const handleInvite = () => {
-    if (!inviteEmail.trim()) return;
-    const newUser: TeamUser = {
-      id: `u-${Date.now()}`,
-      name: 'Pending Invite',
-      email: inviteEmail,
-      role: inviteRole,
-      lastActive: '',
-      status: 'invited',
-    };
-    setTeamUsers(prev => [...prev, newUser]);
-    setInviteEmail('');
-    setShowInvite(false);
-    toast({ title: 'Invitation sent', description: `Invite sent to ${inviteEmail}.` });
+  const handleInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase();
+
+    if (!email) {
+      toast({
+        title: 'Email required',
+        description: 'Enter an email address first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const selectedRoleName = roleKeyToDbName[inviteRole];
+    const selectedRole = roles.find(r => r.name === selectedRoleName);
+
+    if (!selectedRole) {
+      toast({
+        title: 'Role not found',
+        description: 'Could not match the selected role to the database role.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setInviteLoading(true);
+
+      const res = await fetch('/api/auth/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          roleId: selectedRole.id,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send invite');
+      }
+
+      setInviteEmail('');
+      setInviteRole('viewer');
+      setShowInvite(false);
+
+      await loadInvites();
+
+      toast({
+        title: 'Invitation sent',
+        description: `Invite sent to ${email}.`,
+      });
+
+      console.log('Invite token:', data.token);
+      console.log('Invite URL:', data.inviteUrl);
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: 'Invite failed',
+        description:
+          error instanceof Error ? error.message : 'Could not send invite.',
+        variant: 'destructive',
+      });
+    } finally {
+      setInviteLoading(false);
+    }
   };
 
   const toggleNotif = (channelIdx: number, itemIdx: number, field: 'email' | 'push' | 'inApp') => {
@@ -151,6 +327,25 @@ export default function SettingsPage() {
     } : ch));
   };
 
+  const pendingInviteRows: TeamUser[] = invites
+    .filter(invite => invite.status === 'pending')
+    .map(invite => ({
+      id: invite.id,
+      name: 'Pending Invite',
+      email: invite.email,
+      role:
+        (Object.entries(roleKeyToDbName).find(
+          ([, dbName]) => dbName === invite.role_name
+        )?.[0] as UserRole) ?? 'viewer',
+      lastActive: '',
+      status: 'invited',
+    }));
+
+  const displayTeamUsers = [
+    ...teamUsers.filter(user => user.status !== 'invited'),
+    ...pendingInviteRows,
+  ];
+
   const inputClass = "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
   const labelClass = "text-label text-[11px] mb-1.5 block";
 
@@ -158,7 +353,6 @@ export default function SettingsPage() {
     <div className="flex flex-col">
       <TopBar title="Settings" />
       <div className="flex flex-1">
-        {/* Settings Nav */}
         <div className="w-56 shrink-0 border-r border-border bg-card p-4 space-y-1">
           {settingsSections.map(s => (
             <button
@@ -175,10 +369,7 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 p-6 overflow-y-auto">
-
-          {/* ===== PROFILE ===== */}
           {active === 'profile' && (
             <div className="max-w-lg space-y-6">
               <div>
@@ -207,7 +398,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ===== NOTIFICATIONS ===== */}
           {active === 'notifications' && (
             <div className="max-w-2xl space-y-6">
               <div>
@@ -215,7 +405,6 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">Configure alert delivery by channel and severity.</p>
               </div>
 
-              {/* Channel headers */}
               <div className="rounded-xl border border-border bg-card overflow-hidden">
                 <div className="grid grid-cols-[1fr_60px_60px_60px] gap-2 px-4 py-2.5 border-b border-border">
                   <span className="text-label text-[11px]">Alert</span>
@@ -259,7 +448,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ===== ACCESS CONTROL ===== */}
           {active === 'access' && (
             <div className="space-y-8 max-w-4xl">
               <div>
@@ -267,7 +455,6 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">Manage team members, roles, and permissions.</p>
               </div>
 
-              {/* Team Users */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-foreground">Team Members</h4>
@@ -279,7 +466,6 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                {/* Invite form */}
                 {showInvite && (
                   <div className="rounded-xl border border-primary/30 bg-card p-4 space-y-3">
                     <p className="text-xs font-semibold text-foreground">Send Invitation</p>
@@ -306,17 +492,23 @@ export default function SettingsPage() {
                           ))}
                         </select>
                       </div>
-                      <button onClick={handleInvite} className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
-                        Send
+                      <button
+                        onClick={handleInvite}
+                        disabled={inviteLoading}
+                        className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {inviteLoading ? 'Sending...' : 'Send'}
                       </button>
-                      <button onClick={() => setShowInvite(false)} className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                      <button
+                        onClick={() => setShowInvite(false)}
+                        className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
                         <X className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Users list */}
                 <div className="rounded-xl border border-border bg-card overflow-hidden">
                   <div className="grid grid-cols-[1fr_1fr_140px_120px_80px] gap-2 px-4 py-2.5 border-b border-border">
                     <span className="text-label text-[11px]">Name</span>
@@ -325,51 +517,55 @@ export default function SettingsPage() {
                     <span className="text-label text-[11px]">Last Active</span>
                     <span className="text-label text-[11px]">Status</span>
                   </div>
-                  {teamUsers.map(user => (
-                    <div key={user.id} className="grid grid-cols-[1fr_1fr_140px_120px_80px] gap-2 px-4 py-3 border-b border-border last:border-0 items-center">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="h-7 w-7 rounded-full bg-surface flex items-center justify-center text-xs font-semibold text-foreground shrink-0">
-                          {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+
+                  {invitesLoading && displayTeamUsers.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-muted-foreground">Loading team and invites...</div>
+                  ) : (
+                    displayTeamUsers.map(user => (
+                      <div key={user.id} className="grid grid-cols-[1fr_1fr_140px_120px_80px] gap-2 px-4 py-3 border-b border-border last:border-0 items-center">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-7 w-7 rounded-full bg-surface flex items-center justify-center text-xs font-semibold text-foreground shrink-0">
+                            {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          </div>
+                          <span className="text-sm font-medium text-foreground truncate">{user.name}</span>
                         </div>
-                        <span className="text-sm font-medium text-foreground truncate">{user.name}</span>
+                        <span className="text-sm text-muted-foreground truncate">{user.email}</span>
+                        <div className="relative">
+                          {editingUserId === user.id ? (
+                            <select
+                              value={user.role}
+                              onChange={e => handleRoleChange(user.id, e.target.value as UserRole)}
+                              onBlur={() => setEditingUserId(null)}
+                              autoFocus
+                              className="h-8 w-full rounded-md border border-primary bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            >
+                              {roleDefinitions.map(r => (
+                                <option key={r.role} value={r.role}>{r.label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              onClick={() => setEditingUserId(user.id)}
+                              className="flex items-center gap-1 text-xs text-foreground hover:text-primary transition-colors capitalize"
+                            >
+                              {user.role.replace('_', ' ')}
+                              <Pencil className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                          )}
+                        </div>
+                        <span className="font-data text-[11px] text-muted-foreground">
+                          {user.lastActive ? new Date(user.lastActive).toLocaleDateString() : '—'}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`h-2 w-2 rounded-full ${statusDot[user.status]}`} />
+                          <span className="text-[11px] capitalize text-muted-foreground">{user.status}</span>
+                        </div>
                       </div>
-                      <span className="text-sm text-muted-foreground truncate">{user.email}</span>
-                      <div className="relative">
-                        {editingUserId === user.id ? (
-                          <select
-                            value={user.role}
-                            onChange={e => handleRoleChange(user.id, e.target.value as UserRole)}
-                            onBlur={() => setEditingUserId(null)}
-                            autoFocus
-                            className="h-8 w-full rounded-md border border-primary bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                          >
-                            {roleDefinitions.map(r => (
-                              <option key={r.role} value={r.role}>{r.label}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <button
-                            onClick={() => setEditingUserId(user.id)}
-                            className="flex items-center gap-1 text-xs text-foreground hover:text-primary transition-colors capitalize"
-                          >
-                            {user.role.replace('_', ' ')}
-                            <Pencil className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        )}
-                      </div>
-                      <span className="font-data text-[11px] text-muted-foreground">
-                        {user.lastActive ? new Date(user.lastActive).toLocaleDateString() : '—'}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${statusDot[user.status]}`} />
-                        <span className="text-[11px] capitalize text-muted-foreground">{user.status}</span>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
 
-              {/* Permission Matrix */}
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-foreground">Role Permissions Matrix</h4>
                 <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -405,7 +601,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ===== SYSTEM ===== */}
           {active === 'system' && (
             <div className="max-w-2xl space-y-8">
               <div>
@@ -413,7 +608,6 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">Platform configuration and operational defaults.</p>
               </div>
 
-              {/* Communication */}
               <div className="space-y-4">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Communication</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -437,7 +631,6 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Deployment Defaults */}
               <div className="space-y-4">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Deployment Defaults</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -468,7 +661,6 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Data & Logging */}
               <div className="space-y-4">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Data & Logging</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -505,7 +697,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ===== INTEGRATIONS ===== */}
           {active === 'integrations' && (
             <div className="max-w-2xl space-y-6">
               <div>
@@ -562,7 +753,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ===== SESSION ===== */}
           {active === 'session' && (
             <div className="max-w-lg space-y-6">
               <div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Shield,
   CheckCircle2,
@@ -18,24 +18,15 @@ type VerifyState = "input" | "verifying" | "success" | "invalid" | "expired";
 
 export default function VerifyCode() {
   const router = useRouter();
-
+  const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  const [email, setEmail] = useState("");
+  const email = (searchParams.get("email") || "").trim().toLowerCase();
+
   const [code, setCode] = useState<string[]>(Array(6).fill(""));
   const [state, setState] = useState<VerifyState>("input");
   const [resendCooldown, setResendCooldown] = useState(0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const value = params.get("email") || "";
-    setEmail(value);
-
-    if (!value) {
-      router.replace("/auth/login");
-    }
-  }, [router]);
 
   useEffect(() => {
     if (!email) {
@@ -62,7 +53,10 @@ export default function VerifyCode() {
     }
   };
 
-  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
     if (e.key === "Backspace" && !code[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
@@ -83,43 +77,109 @@ export default function VerifyCode() {
 
   const handleVerify = async () => {
     const fullCode = code.join("");
-    if (fullCode.length < 6) return;
+    if (fullCode.length < 6 || !email) return;
 
     setState("verifying");
-    await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    // Temporary mock behavior
-    if (fullCode === "123456") {
+    try {
+      const res = await fetch("/api/auth/verify-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          code: fullCode,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        const message = data.error || "Failed to verify code";
+
+        if (message.toLowerCase().includes("expired")) {
+          setState("expired");
+          return;
+        }
+
+        setState("invalid");
+        setTimeout(() => {
+          setState("input");
+          setCode(Array(6).fill(""));
+          inputRefs.current[0]?.focus();
+        }, 1500);
+        return;
+      }
+
       setState("success");
+
       toast({
         title: "Welcome back",
-        description: "You are now signed in. Session active for 2 weeks.",
+        description: "You are now signed in.",
       });
 
       setTimeout(() => {
-        router.replace("/");
-      }, 1800);
-    } else if (fullCode === "000000") {
-      setState("expired");
-    } else {
+        router.replace("/overview");
+        router.refresh();
+      }, 800);
+    } catch (error) {
       setState("invalid");
+
+      toast({
+        title: "Verification failed",
+        description:
+          error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      });
+
       setTimeout(() => {
         setState("input");
         setCode(Array(6).fill(""));
         inputRefs.current[0]?.focus();
-      }, 2000);
+      }, 1500);
     }
   };
 
   const handleResend = async () => {
-    setResendCooldown(30);
-    toast({
-      title: "Code resent",
-      description: `A new code has been sent to ${email}`,
-    });
+    if (!email) return;
+
+    try {
+      const res = await fetch("/api/auth/request-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to resend code");
+      }
+
+      setResendCooldown(30);
+
+      toast({
+        title: "Code resent",
+        description: `A new code has been sent to ${email}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Resend failed",
+        description:
+          error instanceof Error ? error.message : "Could not resend code",
+        variant: "destructive",
+      });
+    }
   };
 
   const fullCode = code.join("");
+
+  if (!email) return null;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
@@ -203,10 +263,11 @@ export default function VerifyCode() {
                   value={digit}
                   onChange={(e) => handleChange(i, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(i, e)}
-                  className={`w-12 h-14 text-center text-xl font-data rounded-lg border bg-muted text-foreground outline-none transition-all ${state === "invalid"
+                  className={`w-12 h-14 text-center text-xl font-data rounded-lg border bg-muted text-foreground outline-none transition-all ${
+                    state === "invalid"
                       ? "border-destructive glow-destructive"
                       : "border-border focus:border-primary focus:glow-primary"
-                    }`}
+                  }`}
                   disabled={state === "verifying"}
                   autoFocus={i === 0}
                 />

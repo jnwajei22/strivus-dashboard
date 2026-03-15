@@ -6,38 +6,95 @@ import { useRouter } from "next/navigation";
 import { Mail, User, ArrowRight, Shield, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SignUp() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const router = useRouter();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!email.trim() || !fullName.trim()) return;
+
+    const trimmedName = fullName.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!trimmedName || !normalizedEmail) return;
 
     setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    setLoading(false);
+    setErrorMessage("");
 
-    toast({
-      title: "Verification code sent",
-      description: `Check ${email} for your 6-digit code.`,
-    });
+    try {
+      const signupRes = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullName: trimmedName,
+          email: normalizedEmail,
+        }),
+      });
 
-    router.push(`/auth/verification?email=${encodeURIComponent(email)}`);
+      let signupData: any = null;
+      try {
+        signupData = await signupRes.json();
+      } catch {
+        throw new Error(`Signup failed with status ${signupRes.status}`);
+      }
+
+      if (!signupRes.ok) {
+        throw new Error(signupData.error || "Failed to create account");
+      }
+
+      const codeRes = await fetch("/api/auth/request-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+        }),
+      });
+
+      let codeData: any = null;
+      try {
+        codeData = await codeRes.json();
+      } catch {
+        throw new Error(`Request-code failed with status ${codeRes.status}`);
+      }
+
+      if (!codeRes.ok) {
+        throw new Error(codeData.error || "Failed to send verification code");
+      }
+
+      toast({
+        title: "Verification code sent",
+        description: `Check ${normalizedEmail} for your 6-digit code.`,
+      });
+
+      router.push(
+        `/auth/verification?email=${encodeURIComponent(normalizedEmail)}`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Something went wrong";
+
+      console.error("Signup flow error:", error);
+      setErrorMessage(message);
+
+      toast({
+        title: "Signup failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -67,21 +124,22 @@ export default function SignUp() {
           </div>
 
           <h2 className="text-3xl font-bold text-foreground leading-tight mb-4">
-            Join the
+            Create your
             <br />
-            <span className="text-primary">Operations Console.</span>
+            <span className="text-primary">dashboard account.</span>
           </h2>
 
           <p className="text-muted-foreground leading-relaxed">
-            Get secure, passwordless access to clinical device management,
-            firmware operations, and patient data — assigned to your role.
+            Get secure, passwordless access with a one-time email code. Elevated
+            operational or clinical access is managed separately by your
+            administrator.
           </p>
 
           <div className="mt-10 space-y-3">
             {[
               "Instant access with email codes",
-              "Role-assigned permissions",
-              "Full audit trail from day one",
+              "Secure session-based sign-in",
+              "Admin-managed elevated access",
             ].map((item) => (
               <div
                 key={item}
@@ -146,26 +204,14 @@ export default function SignUp() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-label">Requested role</label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger className="h-11 bg-muted border-border">
-                  <SelectValue placeholder="Select your role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="clinician">
-                    Clinician / Provider
-                  </SelectItem>
-                  <SelectItem value="operations">
-                    Operations / Support
-                  </SelectItem>
-                  <SelectItem value="viewer">Viewer / Read-only</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                An admin will confirm your role after signup.
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Need operational or clinical access? Contact your administrator
+              after creating your account.
+            </p>
+
+            {errorMessage && (
+              <p className="text-sm text-destructive">{errorMessage}</p>
+            )}
 
             <Button
               type="submit"
