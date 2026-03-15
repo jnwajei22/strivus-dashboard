@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import {
+  PERMISSIONS,
+  hasAnyPermission,
+  type Permission,
+} from "@/lib/auth/permissions";
 
 type MeResponse = {
   user: {
@@ -26,12 +31,14 @@ type MeResponse = {
     firstName: string | null;
     lastName: string | null;
     displayName: string | null;
+    roleId?: string | null;
     status: string | null;
     emailVerifiedAt?: string | null;
     lastLoginAt?: string | null;
     role: {
       id: string;
       name: string;
+      description?: string | null;
     } | null;
     profile?: {
       jobTitle: string | null;
@@ -47,12 +54,14 @@ type MeResponse = {
       timezone: string | null;
     };
   } | null;
+  permissions: Permission[];
 };
 
 type NavItem = {
   label: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
+  requiredPermissions?: Permission[];
 };
 
 const navItems: NavItem[] = [
@@ -65,26 +74,34 @@ const navItems: NavItem[] = [
     label: "Patients",
     path: "/patients",
     icon: Users,
+    requiredPermissions: [PERMISSIONS.PATIENTS_READ],
   },
   {
     label: "Devices",
     path: "/devices",
     icon: Cpu,
+    requiredPermissions: [PERMISSIONS.DEVICES_READ],
   },
   {
     label: "Firmware",
     path: "/firmware",
     icon: Package,
+    requiredPermissions: [PERMISSIONS.FIRMWARE_READ],
   },
   {
     label: "Logs",
     path: "/logs",
     icon: ScrollText,
+    requiredPermissions: [PERMISSIONS.LOGS_READ],
   },
   {
     label: "Settings",
     path: "/settings",
     icon: Settings,
+    requiredPermissions: [
+      PERMISSIONS.SETTINGS_READ,
+      PERMISSIONS.SETTINGS_UPDATE_PROFILE,
+    ],
   },
 ];
 
@@ -92,6 +109,7 @@ export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState<MeResponse["user"]>(null);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loadingUser, setLoadingUser] = useState(true);
 
   const pathname = usePathname();
@@ -114,6 +132,7 @@ export function AppSidebar() {
         if (res.status === 401) {
           if (isMounted) {
             setCurrentUser(null);
+            setPermissions([]);
           }
           return;
         }
@@ -126,6 +145,8 @@ export function AppSidebar() {
 
         if (isMounted) {
           setCurrentUser(data.user);
+          setPermissions(data.permissions ?? []);
+
           if (typeof data.user?.settings?.sidebarCollapsed === "boolean") {
             setCollapsed(data.user.settings.sidebarCollapsed);
           }
@@ -135,6 +156,7 @@ export function AppSidebar() {
 
         if (isMounted) {
           setCurrentUser(null);
+          setPermissions([]);
         }
       } finally {
         if (isMounted) {
@@ -184,6 +206,7 @@ export function AppSidebar() {
 
       setShowUserMenu(false);
       setCurrentUser(null);
+      setPermissions([]);
       router.push("/auth/login");
       router.refresh();
     } catch (error) {
@@ -198,8 +221,11 @@ export function AppSidebar() {
   };
 
   const visibleNavItems = useMemo(() => {
-    return navItems;
-  }, []);
+    return navItems.filter((item) => {
+      if (!item.requiredPermissions?.length) return true;
+      return hasAnyPermission(permissions, item.requiredPermissions);
+    });
+  }, [permissions]);
 
   const userName =
     currentUser?.displayName ||
@@ -260,14 +286,14 @@ export function AppSidebar() {
           <div ref={userMenuRef} className="relative mb-3">
             <button
               onClick={() => setShowUserMenu((prev) => !prev)}
-              className="flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2.5 text-left hover:bg-sidebar-accent/80 transition-colors"
+              className="flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2.5 text-left transition-colors hover:bg-sidebar-accent/80"
               disabled={loadingUser}
             >
               <div className="min-w-0">
-                <p className="text-xs font-medium text-sidebar-accent-foreground truncate">
+                <p className="truncate text-xs font-medium text-sidebar-accent-foreground">
                   {loadingUser ? "Loading..." : userName}
                 </p>
-                <p className="text-[10px] text-sidebar-foreground capitalize truncate">
+                <p className="truncate text-[10px] capitalize text-sidebar-foreground">
                   {loadingUser ? "Fetching user" : userRole}
                 </p>
               </div>
@@ -280,10 +306,10 @@ export function AppSidebar() {
             </button>
 
             {showUserMenu && !loadingUser && (
-              <div className="absolute bottom-full left-0 mb-2 w-full overflow-hidden rounded-lg border border-sidebar-border bg-card shadow-kinetica z-50">
+              <div className="absolute bottom-full left-0 z-50 mb-2 w-full overflow-hidden rounded-lg border border-sidebar-border bg-card shadow-kinetica">
                 <button
                   onClick={handleSignOut}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-sidebar-accent transition-colors"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive transition-colors hover:bg-sidebar-accent"
                 >
                   <LogOut className="h-4 w-4" />
                   Sign Out
@@ -295,7 +321,7 @@ export function AppSidebar() {
 
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex w-full items-center justify-center rounded-lg py-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          className="flex w-full items-center justify-center rounded-lg py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />

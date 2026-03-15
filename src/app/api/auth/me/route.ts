@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
         ORDER BY p.key
       `;
 
-      permissions = permissionRows.map((row) => row.key);
+      permissions = [...new Set(permissionRows.map((row) => row.key))];
     }
 
     return NextResponse.json({
@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
         firstName: session.first_name,
         lastName: session.last_name,
         displayName: session.display_name,
+        roleId: session.role_id,
         status: session.status,
         emailVerifiedAt: session.email_verified_at,
         lastLoginAt: session.last_login_at,
