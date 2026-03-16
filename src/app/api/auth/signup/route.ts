@@ -10,10 +10,14 @@ function normalizeEmail(email: string) {
 }
 
 function splitName(fullName: string) {
-  const parts = fullName.trim().replace(/\s+/g, " ").split(" ");
-  const firstName = parts[0] ?? null;
-  const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
-  return { firstName, lastName, displayName: fullName.trim() || null };
+  const normalized = fullName.trim().replace(/\s+/g, " ");
+  const parts = normalized.split(" ");
+
+  return {
+    firstName: parts[0] ?? null,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+    displayName: normalized || null,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -59,8 +63,8 @@ export async function POST(req: NextRequest) {
         ${firstName},
         ${lastName},
         ${displayName},
-        ${USER_STATUS}::user_status,
-        ${AUTH_METHOD}::auth_method
+        ${USER_STATUS},
+        ${AUTH_METHOD}
       )
       RETURNING id, email, display_name, created_at
     `;
@@ -71,6 +75,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("POST /api/auth/signup error:", error);
+
     return NextResponse.json(
       { error: "Failed to create account" },
       { status: 500 }

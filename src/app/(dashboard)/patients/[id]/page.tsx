@@ -4,18 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { TopBar } from "@/components/layout/TopBar";
-import { StatusBadge, MetricCard, SectionHeader } from "@/components/ui/kinetica";
 import {
-  mockPatients,
-  mockDevices,
-  mockSessions,
-  mockCsvFiles,
-  mockCommandLogs,
-  mockAdherence,
-  mockPatientProtocols,
-  mockPatientSessionDays,
-  mockClinicalFlags,
-} from "@/data/mock-data";
+  StatusBadge,
+  MetricCard,
+  SectionHeader,
+} from "@/components/ui/kinetica";
 import {
   ArrowLeft,
   Battery,
@@ -34,115 +27,205 @@ import {
   TrendingUp,
   Dumbbell,
   Shield,
+  Pencil,
 } from "lucide-react";
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
-import { PERMISSIONS, hasPermission, type Permission } from "@/lib/auth/permissions";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
-type MeResponse = {
-  user: {
+type PatientDetailResponse = {
+  patient: {
     id: string;
-    email: string;
     firstName: string | null;
     lastName: string | null;
+    fullName: string | null;
+    dob: string | null;
+    sex: string | null;
+    height: string | null;
+    weight: string | null;
+    email: string | null;
+    phone: string | null;
+    medicareId: string | null;
+    providerFacility: string | null;
+    status: string;
+    enrolledAt: string | null;
+    dischargedAt: string | null;
+    notes: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  device: {
+    id: string;
+    serialNumber: string;
     displayName: string | null;
-    roleId?: string | null;
-    status: string | null;
-    emailVerifiedAt?: string | null;
-    lastLoginAt?: string | null;
-    authMethod?: string | null;
-    role: {
-      id: string;
-      name: string;
-      description?: string | null;
-    } | null;
+    status: string;
+    firmwareVersion: string | null;
+    battery: number | null;
+    signal: number | null;
+    lastSync: string | null;
+    lastContact: string | null;
+    deploymentGroup: string | null;
   } | null;
-  permissions: Permission[];
+  protocol: {
+    id: string;
+    name: string;
+    focusArea: string | null;
+    frequency: string | null;
+    setsReps: string | null;
+    loadTarget: number | null;
+    progressionNotes: string | null;
+    status: string;
+    startedAt: string | null;
+    endedAt: string | null;
+    lastUpdated: string;
+  } | null;
+  flags: Array<{
+    id: string;
+    type: string;
+    severity: string;
+    status: string;
+    title: string;
+    description: string | null;
+    createdAt: string;
+    resolvedAt: string | null;
+  }>;
+  adherence: {
+    prescribed: number;
+    completed: number;
+    missed: number;
+    cancelled: number;
+    adherenceRate: number;
+  } | null;
+  sessionDays: Array<{
+    date: string;
+    sessions: number;
+    completed: number;
+    duration: number;
+    reps: number;
+    missed: number;
+    adherenceRate: number | null;
+  }>;
+  sessions: Array<{
+    id: string;
+    startedAt: string;
+    endedAt: string | null;
+    duration: number;
+    status: string;
+    reps: number | null;
+    exercises: number | null;
+    summary: string | null;
+  }>;
+  files: Array<{
+    id: string;
+    fileName: string;
+    size: number | null;
+    uploadedAt: string;
+    status: string;
+  }>;
+  commands: Array<{
+    id: string;
+    commandType: string;
+    result: string;
+    status: string;
+    createdAt: string;
+    resultMessage: string | null;
+    resultCreatedAt: string | null;
+  }>;
 };
 
-export default function PatientDetail() {
+export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [loadingPermissions, setLoadingPermissions] = useState(true);
-  const [activeTab, setActiveTab] = useState<"sessions" | "files" | "commands">("sessions");
+  const [data, setData] = useState<PatientDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"sessions" | "files" | "commands">(
+    "sessions"
+  );
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadMe() {
+    async function loadPatient() {
       try {
-        setLoadingPermissions(true);
+        setLoading(true);
+        setError(null);
 
-        const res = await fetch("/api/auth/me", {
+        const res = await fetch(`/api/patients/${id}`, {
           method: "GET",
           credentials: "include",
           cache: "no-store",
         });
 
+        const json = await res.json();
+
         if (!isMounted) return;
 
-        if (res.status === 401) {
-          setPermissions([]);
+        if (res.status === 404) {
+          setError("Patient not found.");
+          setData(null);
           return;
         }
 
-        const data: MeResponse = await res.json();
-
-        if (!res.ok) {
-          throw new Error("Failed to load permissions");
+        if (res.status === 401 || res.status === 403) {
+          setError("You do not have permission to view this patient.");
+          setData(null);
+          return;
         }
 
-        setPermissions(data.permissions ?? []);
-      } catch (error) {
-        console.error("Failed to load /api/auth/me:", error);
+        if (!res.ok) {
+          throw new Error(json?.error || "Failed to load patient details");
+        }
+
+        setData(json as PatientDetailResponse);
+      } catch (err) {
+        console.error("Failed to load patient detail:", err);
         if (isMounted) {
-          setPermissions([]);
+          setError("Failed to load patient details.");
+          setData(null);
         }
       } finally {
         if (isMounted) {
-          setLoadingPermissions(false);
+          setLoading(false);
         }
       }
     }
 
-    loadMe();
+    if (id) {
+      loadPatient();
+    }
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [id]);
 
-  const canReadPatients = hasPermission(permissions, PERMISSIONS.PATIENTS_READ);
-  const canUpdatePatients = hasPermission(permissions, PERMISSIONS.PATIENTS_UPDATE);
-  const canRunDeviceActions = hasPermission(permissions, PERMISSIONS.DEVICES_ACTIONS);
+  const patient = data?.patient ?? null;
+  const device = data?.device ?? null;
+  const sessions = data?.sessions ?? [];
+  const files = data?.files ?? [];
+  const commands = data?.commands ?? [];
+  const adherence = data?.adherence ?? null;
+  const protocol = data?.protocol ?? null;
+  const sessionDays = data?.sessionDays ?? [];
+  const flags = data?.flags ?? [];
 
-  const patient = useMemo(() => mockPatients.find((p) => p.id === id), [id]);
-  const device = useMemo(
-    () => (patient?.deviceId ? mockDevices.find((d) => d.id === patient.deviceId) : null),
-    [patient]
-  );
-  const sessions = useMemo(() => mockSessions.filter((s) => s.patientId === id), [id]);
-  const files = useMemo(() => mockCsvFiles.filter((f) => f.patientId === id), [id]);
-  const commands = useMemo(() => mockCommandLogs.filter((c) => c.patientId === id), [id]);
-  const adherence = useMemo(() => mockAdherence.find((a) => a.patientId === id), [id]);
-  const protocol = useMemo(() => mockPatientProtocols.find((p) => p.patientId === id), [id]);
-  const sessionDays = mockPatientSessionDays[id || ""] || [];
-  const flags = useMemo(() => mockClinicalFlags.filter((f) => f.patientId === id), [id]);
+  const displayName = useMemo(() => {
+    if (!patient) return "Patient";
+    return (
+      patient.fullName?.trim() ||
+      `${patient.firstName ?? ""} ${patient.lastName ?? ""}`.trim() ||
+      "Unnamed Patient"
+    );
+  }, [patient]);
 
   const completedSessions = sessions.filter((s) => s.status === "completed");
   const totalReps = completedSessions.reduce((sum, s) => sum + (s.reps || 0), 0);
-  const totalMinutes = completedSessions.reduce((sum, s) => sum + s.duration, 0);
+  const totalMinutes = completedSessions.reduce(
+    (sum, s) => sum + (s.duration || 0),
+    0
+  );
   const avgDuration =
-    completedSessions.length > 0 ? Math.round(totalMinutes / completedSessions.length) : 0;
+    completedSessions.length > 0
+      ? Math.round(totalMinutes / completedSessions.length)
+      : 0;
 
   const remoteActions = [
     { label: "Sync Now", icon: RefreshCw, command: "sync" },
@@ -167,37 +250,30 @@ export default function PatientDetail() {
     low: "text-muted-foreground",
   };
 
-  if (loadingPermissions) {
+  if (loading) {
     return (
       <div className="flex flex-col">
-        <TopBar title="Patient" />
+        <TopBar title="Patient Details" />
         <div className="p-6 text-sm text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
-  if (!canReadPatients) {
-    return (
-      <div className="flex flex-col">
-        <TopBar title="Patients" />
-        <div className="p-6">
-          <div className="rounded-xl border border-border bg-card p-6 shadow-kinetica">
-            <h2 className="text-base font-semibold text-foreground">Access denied</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              You do not have permission to view patient details.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!patient) {
+  if (error || !patient) {
     return (
       <div className="flex flex-col">
         <TopBar title="Patient Not Found" />
-        <div className="flex h-96 items-center justify-center">
-          <p className="text-muted-foreground">Patient not found.</p>
+        <div className="p-6 space-y-6">
+          <Link
+            href="/patients"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to Patients
+          </Link>
+
+          <div className="flex items-center justify-center h-64 rounded-xl border border-border bg-card">
+            <p className="text-muted-foreground">{error ?? "Patient not found."}</p>
+          </div>
         </div>
       </div>
     );
@@ -205,38 +281,51 @@ export default function PatientDetail() {
 
   return (
     <div className="flex flex-col">
-      <TopBar title={`${patient.firstName} ${patient.lastName}`} />
-      <div className="space-y-6 p-6">
-        <Link
-          href="/patients"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to Patients
-        </Link>
+      <TopBar title={displayName} />
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <Link
+            href="/patients"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to Patients
+          </Link>
+
+          <Link
+            href={`/patients/${patient.id}/edit`}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Pencil className="h-4 w-4" />
+            Edit Patient
+          </Link>
+        </div>
 
         <div className="rounded-xl border border-border bg-card p-6 shadow-kinetica">
           <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="min-w-[280px] flex-1">
+            <div className="flex-1 min-w-[280px]">
               <div className="flex items-center gap-3">
                 <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                  {patient.firstName} {patient.lastName}
+                  {displayName}
                 </h2>
-                <StatusBadge status={patient.status} />
+                <StatusBadge status={patient.status as never} />
               </div>
+
               <div className="mt-3 grid gap-x-8 gap-y-1 text-sm text-muted-foreground sm:grid-cols-2">
                 <p>
                   DOB:{" "}
                   <span className="font-data text-foreground">
-                    {new Date(patient.dob).toLocaleDateString()}
+                    {patient.dob ? new Date(patient.dob).toLocaleDateString() : "—"}
                   </span>{" "}
-                  · {patient.sex}
+                  · {patient.sex || "—"}
                 </p>
-                <p>{patient.email}</p>
-                <p>{patient.phone}</p>
+                <p>{patient.email || "—"}</p>
+                <p>{patient.phone || "—"}</p>
                 {patient.providerFacility && (
                   <p>
                     Provider:{" "}
-                    <span className="text-foreground">{patient.providerFacility}</span>
+                    <span className="text-foreground">
+                      {patient.providerFacility}
+                    </span>
                   </p>
                 )}
                 {patient.height && (
@@ -249,35 +338,34 @@ export default function PatientDetail() {
                     Weight: <span className="text-foreground">{patient.weight}</span>
                   </p>
                 )}
-                {patient.deploymentGroup && (
+                {device?.deploymentGroup && (
                   <p>
                     Software Group:{" "}
                     <span className="font-data text-foreground uppercase">
-                      {patient.deploymentGroup}
+                      {device.deploymentGroup}
                     </span>
                   </p>
                 )}
+                {patient.medicareId && (
+                  <p>
+                    Medicare ID:{" "}
+                    <span className="text-foreground">{patient.medicareId}</span>
+                  </p>
+                )}
               </div>
-              <p className="mt-3 text-sm text-foreground/70">{patient.notes}</p>
 
-              {canUpdatePatients && (
-                <div className="mt-4">
-                  <Link
-                    href={`/patients/${patient.id}/edit`}
-                    className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                  >
-                    <Cpu className="h-4 w-4" /> Edit Patient
-                  </Link>
-                </div>
-              )}
+              <p className="mt-3 text-sm text-foreground/70">
+                {patient.notes || "No notes recorded."}
+              </p>
             </div>
 
-            {device && canRunDeviceActions && (
+            {device && (
               <div className="flex flex-wrap gap-2">
                 {remoteActions.map((action) => (
                   <button
                     key={action.command}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-foreground transition-all active:scale-95 hover:border-primary/50"
+                    type="button"
+                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-foreground hover:border-primary/50 transition-all active:scale-95"
                   >
                     <action.icon className="h-4 w-4 text-primary" />
                     {action.label}
@@ -390,7 +478,12 @@ export default function PatientDetail() {
                     tickLine={false}
                   />
                   <Tooltip {...chartTooltipStyle} />
-                  <Bar dataKey="reps" name="Reps" fill="hsl(199 89% 48%)" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="reps"
+                    name="Reps"
+                    fill="hsl(199 89% 48%)"
+                    radius={[4, 4, 0, 0]}
+                  />
                   <Bar
                     dataKey="completed"
                     name="Completed"
@@ -410,7 +503,9 @@ export default function PatientDetail() {
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Prescribed</span>
-                  <span className="font-data text-foreground">{adherence.prescribed} sessions</span>
+                  <span className="font-data text-foreground">
+                    {adherence.prescribed} sessions
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Completed</span>
@@ -424,9 +519,11 @@ export default function PatientDetail() {
                   <span className="text-muted-foreground">Cancelled</span>
                   <span className="font-data text-warning">{adherence.cancelled}</span>
                 </div>
-                <div className="mt-2 border-t border-border pt-3">
+                <div className="mt-2 pt-3 border-t border-border">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">Adherence Rate</span>
+                    <span className="text-sm font-medium text-foreground">
+                      Adherence Rate
+                    </span>
                     <span
                       className={`font-data text-lg font-semibold ${
                         adherence.adherenceRate >= 75
@@ -439,7 +536,7 @@ export default function PatientDetail() {
                       {adherence.adherenceRate}%
                     </span>
                   </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${
                         adherence.adherenceRate >= 75
@@ -454,7 +551,9 @@ export default function PatientDetail() {
                 </div>
               </div>
             ) : (
-              <p className="mt-4 text-sm text-muted-foreground">No adherence data available.</p>
+              <p className="mt-4 text-sm text-muted-foreground">
+                No adherence data available.
+              </p>
             )}
           </div>
 
@@ -466,32 +565,42 @@ export default function PatientDetail() {
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Focus Area
                   </p>
-                  <p className="mt-0.5 text-sm text-foreground">{protocol.focusArea}</p>
+                  <p className="text-sm text-foreground mt-0.5">
+                    {protocol.focusArea || "—"}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Frequency
                   </p>
-                  <p className="font-data mt-0.5 text-sm text-foreground">{protocol.frequency}</p>
+                  <p className="font-data text-sm text-foreground mt-0.5">
+                    {protocol.frequency || "—"}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Sets / Reps
                   </p>
-                  <p className="font-data mt-0.5 text-sm text-foreground">{protocol.setsReps}</p>
+                  <p className="font-data text-sm text-foreground mt-0.5">
+                    {protocol.setsReps || "—"}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Progression Notes
                   </p>
-                  <p className="mt-0.5 text-sm text-foreground/80">{protocol.progressionNotes}</p>
+                  <p className="text-sm text-foreground/80 mt-0.5">
+                    {protocol.progressionNotes || "—"}
+                  </p>
                 </div>
-                <p className="border-t border-border pt-2 text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground pt-2 border-t border-border">
                   Last updated {new Date(protocol.lastUpdated).toLocaleDateString()}
                 </p>
               </div>
             ) : (
-              <p className="mt-4 text-sm text-muted-foreground">No protocol assigned.</p>
+              <p className="mt-4 text-sm text-muted-foreground">
+                No protocol assigned.
+              </p>
             )}
           </div>
 
@@ -500,18 +609,24 @@ export default function PatientDetail() {
             {flags.length === 0 ? (
               <div className="mt-4 flex flex-col items-center justify-center py-6 text-center">
                 <Shield className="h-8 w-8 text-success/60" />
-                <p className="mt-2 text-sm text-muted-foreground">No active concerns</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No active concerns
+                </p>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {flags.map((flag) => (
                   <div key={flag.id} className="flex gap-3 text-sm">
                     <AlertTriangle
-                      className={`mt-0.5 h-4 w-4 shrink-0 ${flagSeverityIcon[flag.severity]}`}
+                      className={`h-4 w-4 mt-0.5 shrink-0 ${
+                        flagSeverityIcon[flag.severity] ?? "text-muted-foreground"
+                      }`}
                     />
                     <div className="min-w-0">
-                      <p className="text-foreground">{flag.description}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
+                      <p className="text-foreground">
+                        {flag.description || flag.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {flag.type.replace(/_/g, " ")} ·{" "}
                         {new Date(flag.createdAt).toLocaleDateString()}
                       </p>
@@ -527,7 +642,11 @@ export default function PatientDetail() {
           <div>
             <SectionHeader title="Device Status" />
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
-              <MetricCard label="Device" value={device.serialNumber} icon={<Cpu className="h-5 w-5" />} />
+              <MetricCard
+                label="Device"
+                value={device.serialNumber}
+                icon={<Cpu className="h-5 w-5" />}
+              />
               <MetricCard
                 label="Status"
                 value={device.status}
@@ -542,21 +661,25 @@ export default function PatientDetail() {
               />
               <MetricCard
                 label="Firmware"
-                value={device.firmwareVersion}
+                value={device.firmwareVersion || "—"}
                 icon={<Cpu className="h-5 w-5" />}
                 variant="primary"
               />
               <MetricCard
                 label="Battery"
-                value={`${device.battery}%`}
+                value={device.battery != null ? `${device.battery}%` : "—"}
                 icon={<Battery className="h-5 w-5" />}
-                variant={device.battery < 30 ? "warning" : "success"}
+                variant={
+                  device.battery != null && device.battery < 30 ? "warning" : "success"
+                }
               />
               <MetricCard
                 label="Signal"
-                value={`${device.signal} dBm`}
+                value={device.signal != null ? `${device.signal} dBm` : "—"}
                 icon={<Wifi className="h-5 w-5" />}
-                variant={device.signal < -70 ? "warning" : "default"}
+                variant={
+                  device.signal != null && device.signal < -70 ? "warning" : "default"
+                }
               />
             </div>
           </div>
@@ -564,11 +687,12 @@ export default function PatientDetail() {
           <div className="rounded-xl border border-border border-dashed bg-card p-6 text-center">
             <Cpu className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-2 text-sm text-muted-foreground">No device assigned</p>
-            {canUpdatePatients && (
-              <button className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                Assign Device
-              </button>
-            )}
+            <button
+              type="button"
+              className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Assign Device
+            </button>
           </div>
         )}
 
@@ -593,7 +717,7 @@ export default function PatientDetail() {
         {activeTab === "sessions" && (
           <div className="space-y-2">
             {sessions.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground py-8 text-center">
                 No sessions recorded yet.
               </p>
             ) : (
@@ -603,14 +727,16 @@ export default function PatientDetail() {
                   className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{s.summary}</p>
-                    <p className="font-data mt-0.5 text-xs text-muted-foreground">
+                    <p className="text-sm font-medium text-foreground">
+                      {s.summary || "Workout session"}
+                    </p>
+                    <p className="font-data text-xs text-muted-foreground mt-0.5">
                       {new Date(s.startedAt).toLocaleString()} · {s.duration}min
                       {s.reps ? ` · ${s.reps} reps` : ""}
                       {s.exercises ? ` · ${s.exercises} exercises` : ""}
                     </p>
                   </div>
-                  <StatusBadge status={s.status} />
+                  <StatusBadge status={s.status as never} />
                 </div>
               ))
             )}
@@ -620,7 +746,7 @@ export default function PatientDetail() {
         {activeTab === "files" && (
           <div className="space-y-2">
             {files.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground py-8 text-center">
                 No files uploaded yet.
               </p>
             ) : (
@@ -634,12 +760,15 @@ export default function PatientDetail() {
                     <div>
                       <p className="font-data text-sm text-foreground">{f.fileName}</p>
                       <p className="text-xs text-muted-foreground">
-                        {(f.size / 1000).toFixed(0)} KB ·{" "}
+                        {f.size != null ? `${(f.size / 1000).toFixed(0)} KB` : "—"} ·{" "}
                         {new Date(f.uploadedAt).toLocaleString()}
                       </p>
                     </div>
                   </div>
-                  <button className="text-muted-foreground hover:text-foreground">
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     <Download className="h-4 w-4" />
                   </button>
                 </div>
@@ -651,7 +780,7 @@ export default function PatientDetail() {
         {activeTab === "commands" && (
           <div className="space-y-2">
             {commands.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground py-8 text-center">
                 No commands issued yet.
               </p>
             ) : (
@@ -663,15 +792,16 @@ export default function PatientDetail() {
                   <div className="flex items-center gap-3">
                     <Zap className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium capitalize text-foreground">
-                        {c.commandType.replace("_", " ")}
+                      <p className="text-sm font-medium text-foreground capitalize">
+                        {c.commandType.replace(/_/g, " ")}
                       </p>
                       <p className="font-data text-xs text-muted-foreground">
-                        {new Date(c.createdAt).toLocaleString()} · by {c.actor}
+                        {new Date(c.createdAt).toLocaleString()}
+                        {c.resultMessage ? ` · ${c.resultMessage}` : ""}
                       </p>
                     </div>
                   </div>
-                  <StatusBadge status={c.result} />
+                  <StatusBadge status={c.result as never} />
                 </div>
               ))
             )}

@@ -1,19 +1,11 @@
-// src/app/api/auth/verify-code/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createHash, randomBytes } from "crypto";
 import { sql } from "@/lib/db";
+import { createSession, hashValue } from "@/lib/auth/session";
 
 const PURPOSE = "login";
-const AUTH_METHOD = "email_code";
-const COOKIE_NAME = "strivus_session";
-const SESSION_DAYS = 14;
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
-}
-
-function hashValue(value: string) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function getClientIp(req: NextRequest) {
@@ -60,7 +52,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (record.attempt_count >= 10) {
-      return NextResponse.json({ error: "Code expired" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Too many attempts" },
+        { status: 400 }
+      );
     }
 
     if (record.code_hash !== codeHash) {
@@ -71,17 +66,6 @@ export async function POST(req: NextRequest) {
       `;
 
       return NextResponse.json({ error: "Invalid code" }, { status: 400 });
-    }
-
-    const users = await sql`
-      SELECT id, email
-      FROM users
-      WHERE id = ${record.user_id}
-      LIMIT 1
-    `;
-
-    if (users.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     await sql`
@@ -99,47 +83,17 @@ export async function POST(req: NextRequest) {
       WHERE id = ${record.user_id}
     `;
 
-    const rawToken = randomBytes(32).toString("hex");
-    const tokenHash = hashValue(rawToken);
-    const ipAddress = getClientIp(req);
-    const userAgent = req.headers.get("user-agent");
-
-    await sql`
-      INSERT INTO sessions (
-        user_id,
-        token_hash,
-        auth_method,
-        ip_address,
-        user_agent,
-        last_seen_at,
-        expires_at,
-        revoked_at
-      )
-      VALUES (
-        ${record.user_id},
-        ${tokenHash},
-        ${AUTH_METHOD}::auth_method,
-        ${ipAddress},
-        ${userAgent},
-        now(),
-        now() + interval '14 days',
-        NULL
-      )
-    `;
-
-    const res = NextResponse.json({ ok: true });
-
-    res.cookies.set(COOKIE_NAME, rawToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * SESSION_DAYS,
+    await createSession(record.user_id, {
+      authMethod: "email_code",
+      ipAddress: getClientIp(req),
+      userAgent: req.headers.get("user-agent"),
+      durationMs: 1000 * 60 * 60 * 24 * 14,
     });
 
-    return res;
+    return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("POST /api/auth/verify-code error:", error);
+
     return NextResponse.json(
       { error: "Failed to verify code" },
       { status: 500 }

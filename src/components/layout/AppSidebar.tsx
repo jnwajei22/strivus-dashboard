@@ -32,14 +32,18 @@ type MeResponse = {
     lastName: string | null;
     displayName: string | null;
     roleId?: string | null;
+    roleName?: string | null;
     status: string | null;
     emailVerifiedAt?: string | null;
     lastLoginAt?: string | null;
-    role: {
-      id: string;
-      name: string;
-      description?: string | null;
-    } | null;
+    authMethod?: string | null;
+    role:
+      | {
+          id: string;
+          name: string;
+          description?: string | null;
+        }
+      | null;
     profile?: {
       jobTitle: string | null;
       avatarUrl: string | null;
@@ -233,7 +237,11 @@ export function AppSidebar() {
     currentUser?.email ||
     "User";
 
-  const userRole = currentUser?.role?.name || currentUser?.status || "member";
+  const userRole =
+    currentUser?.role?.name ||
+    currentUser?.roleName ||
+    currentUser?.status ||
+    "member";
 
   return (
     <aside
@@ -250,10 +258,10 @@ export function AppSidebar() {
         {!collapsed && (
           <div className="flex flex-col">
             <span className="text-sm font-semibold tracking-tight text-sidebar-accent-foreground">
-              KINETICA
+              STRIVUS 
             </span>
             <span className="text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground">
-              STRIVUS LLC
+              KINETICA DASHBOARD
             </span>
           </div>
         )}

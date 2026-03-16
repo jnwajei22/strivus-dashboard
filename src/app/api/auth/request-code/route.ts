@@ -1,20 +1,12 @@
 // src/app/api/auth/request-code/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createHash, randomInt } from "crypto";
 import { sql } from "@/lib/db";
+import { generateCode, hashValue } from "@/lib/auth/session";
 
 const PURPOSE = "login";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
-}
-
-function hashValue(value: string) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function generateCode() {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 export async function POST(req: NextRequest) {
@@ -23,7 +15,10 @@ export async function POST(req: NextRequest) {
     const email = normalizeEmail(String(body.email ?? ""));
 
     if (!email) {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Email is required" },
+        { status: 400 }
+      );
     }
 
     const users = await sql`
@@ -83,6 +78,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("POST /api/auth/request-code error:", error);
+
     return NextResponse.json(
       { error: "Failed to send login code" },
       { status: 500 }

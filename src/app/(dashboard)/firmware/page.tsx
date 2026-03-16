@@ -3,12 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge, MetricCard, SectionHeader } from "@/components/ui/kinetica";
-import {
-  mockFirmwareVersions,
-  mockDeployments,
-  mockDevices,
-  getDeviceSerial,
-} from "@/data/mock-data";
+import { mockDevices, getDeviceSerial } from "@/data/mock-data";
 import {
   Package,
   Upload,
@@ -54,16 +49,61 @@ type MeResponse = {
   permissions: Permission[];
 };
 
+type FirmwareRow = {
+  id: string;
+  version: string;
+  release_date: string | null;
+  release_notes: string | null;
+  update_type: string | null;
+  status: "active" | "staged" | "deprecated" | "archived";
+  binary_upload_id: string | null;
+  checksum: string | null;
+  file_name: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DeploymentRow = {
+  id: string;
+  firmware_version_id: string;
+  deployment_group_id: string | null;
+  device_id: string | null;
+  initiated_by_user_id: string | null;
+  status:
+    | "pending"
+    | "staged"
+    | "in_progress"
+    | "success"
+    | "failed"
+    | "rolled_back"
+    | "cancelled";
+  started_at: string | null;
+  completed_at: string | null;
+  rolled_back_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
 export default function Firmware() {
   const { toast } = useToast();
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
+  const [loadingFirmware, setLoadingFirmware] = useState(true);
+  const [loadingDeployments, setLoadingDeployments] = useState(true);
+
+  const [firmwareVersions, setFirmwareVersions] = useState<FirmwareRow[]>([]);
+  const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
+
   const [selectedGroup, setSelectedGroup] =
     useState<DeploymentGroupOption>("production");
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [submittingUpload, setSubmittingUpload] = useState(false);
+  const [submittingDeployId, setSubmittingDeployId] = useState<string | null>(null);
+
   const [uploadForm, setUploadForm] = useState({
     version: "",
     updateType: "minor" as "major" | "minor" | "patch" | "hotfix",
@@ -118,6 +158,96 @@ export default function Firmware() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadFirmware() {
+      try {
+        setLoadingFirmware(true);
+
+        const res = await fetch("/api/firmware", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const data: FirmwareRow[] = await res.json();
+
+        if (!res.ok) {
+          throw new Error("Failed to load firmware versions");
+        }
+
+        if (!isMounted) return;
+        setFirmwareVersions(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Failed to load /api/firmware:", error);
+        if (!isMounted) return;
+
+        setFirmwareVersions([]);
+        toast({
+          title: "Failed to load firmware",
+          description: "Could not load firmware versions.",
+          variant: "destructive",
+        });
+      } finally {
+        if (isMounted) {
+          setLoadingFirmware(false);
+        }
+      }
+    }
+
+    loadFirmware();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [toast]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDeployments() {
+      try {
+        setLoadingDeployments(true);
+
+        const res = await fetch("/api/firmware/deployments", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const data: DeploymentRow[] = await res.json();
+
+        if (!res.ok) {
+          throw new Error("Failed to load firmware deployments");
+        }
+
+        if (!isMounted) return;
+        setDeployments(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Failed to load /api/firmware/deployments:", error);
+        if (!isMounted) return;
+
+        setDeployments([]);
+        toast({
+          title: "Failed to load deployments",
+          description: "Could not load firmware deployments.",
+          variant: "destructive",
+        });
+      } finally {
+        if (isMounted) {
+          setLoadingDeployments(false);
+        }
+      }
+    }
+
+    loadDeployments();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [toast]);
+
   const canReadFirmware = hasPermission(permissions, PERMISSIONS.FIRMWARE_READ);
   const canCreateFirmware = hasPermission(
     permissions,
@@ -128,10 +258,40 @@ export default function Firmware() {
     PERMISSIONS.FIRMWARE_DEPLOY
   );
 
-  const firmwareByGroup = useMemo(() => {
-    if (selectedGroup === "all") return mockFirmwareVersions;
+  async function reloadFirmwareData() {
+    try {
+      const [firmwareRes, deploymentsRes] = await Promise.all([
+        fetch("/api/firmware", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }),
+        fetch("/api/firmware/deployments", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }),
+      ]);
 
-    return mockFirmwareVersions.filter((fw) => {
+      const firmwareData: FirmwareRow[] = await firmwareRes.json();
+      const deploymentsData: DeploymentRow[] = await deploymentsRes.json();
+
+      if (firmwareRes.ok) {
+        setFirmwareVersions(Array.isArray(firmwareData) ? firmwareData : []);
+      }
+
+      if (deploymentsRes.ok) {
+        setDeployments(Array.isArray(deploymentsData) ? deploymentsData : []);
+      }
+    } catch (error) {
+      console.error("Failed to reload firmware page data:", error);
+    }
+  }
+
+  const firmwareByGroup = useMemo(() => {
+    if (selectedGroup === "all") return firmwareVersions;
+
+    return firmwareVersions.filter((fw) => {
       if (selectedGroup === "production") {
         return fw.status === "active" || fw.status === "deprecated";
       }
@@ -143,20 +303,23 @@ export default function Firmware() {
       }
       return true;
     });
-  }, [selectedGroup]);
+  }, [selectedGroup, firmwareVersions]);
 
   const activeVersion = firmwareByGroup.find((v) => v.status === "active");
-  const stagedVersion = mockFirmwareVersions.find((v) => v.status === "staged");
+  const stagedVersion = firmwareVersions.find((v) => v.status === "staged");
 
-  const totalDeployments = mockDeployments.length;
-  const successfulDeployments = mockDeployments.filter(
-    (d) => d.result === "success"
+  const totalDeployments = deployments.length;
+  const successfulDeployments = deployments.filter(
+    (d) => d.status === "success"
   ).length;
-  const failedDeployments = mockDeployments.filter(
-    (d) => d.result === "failed"
+  const failedDeployments = deployments.filter(
+    (d) => d.status === "failed"
   ).length;
-  const pendingDeployments = mockDeployments.filter(
-    (d) => d.result === "pending" || d.result === "in_progress"
+  const pendingDeployments = deployments.filter(
+    (d) =>
+      d.status === "pending" ||
+      d.status === "staged" ||
+      d.status === "in_progress"
   ).length;
 
   const devicesOnLatest = mockDevices.filter(
@@ -175,22 +338,120 @@ export default function Firmware() {
     { value: "all", label: "All", desc: "All tracks" },
   ];
 
-  const handleUploadSubmit = () => {
-    if (!canCreateFirmware) return;
+  async function handleUploadSubmit() {
+    if (!canCreateFirmware || submittingUpload) return;
 
-    toast({
-      title: "Firmware Uploaded",
-      description: `${uploadForm.version} staged for ${uploadForm.targetGroup}`,
-    });
-    setShowUpload(false);
-    setUploadForm({
-      version: "",
-      updateType: "minor",
-      targetGroup: "test",
-      notes: "",
-      fileName: "",
-    });
-  };
+    try {
+      setSubmittingUpload(true);
+
+      const payload = {
+        version: uploadForm.version.trim(),
+        release_date: new Date().toISOString(),
+        release_notes: uploadForm.notes.trim() || null,
+        update_type: uploadForm.updateType,
+        status: "staged",
+        binary_upload_id: null,
+        checksum: null,
+        file_name: uploadForm.fileName.trim() || null,
+      };
+
+      const res = await fetch("/api/firmware", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to create firmware version");
+      }
+
+      toast({
+        title: "Firmware Uploaded",
+        description: `${payload.version} staged successfully.`,
+      });
+
+      setShowUpload(false);
+      setUploadForm({
+        version: "",
+        updateType: "minor",
+        targetGroup: "test",
+        notes: "",
+        fileName: "",
+      });
+
+      await reloadFirmwareData();
+    } catch (error) {
+      console.error("POST /api/firmware failed:", error);
+      toast({
+        title: "Upload failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not create firmware version.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingUpload(false);
+    }
+  }
+
+  async function handleDeployFirmware(firmware: FirmwareRow) {
+    if (!canDeployFirmware || submittingDeployId) return;
+
+    try {
+      setSubmittingDeployId(firmware.id);
+
+      const payload = {
+        firmware_version_id: firmware.id,
+        deployment_group_id: null,
+        device_id: null,
+        status: "pending",
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        rolled_back_at: null,
+        notes: `Deployment initiated from firmware page (${selectedGroup})`,
+      };
+
+      const res = await fetch("/api/firmware/deployments", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to create deployment");
+      }
+
+      toast({
+        title: "Deployment Started",
+        description: `${firmware.version} deployment was queued.`,
+      });
+
+      await reloadFirmwareData();
+    } catch (error) {
+      console.error("POST /api/firmware/deployments failed:", error);
+      toast({
+        title: "Deployment failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not create deployment.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingDeployId(null);
+    }
+  }
 
   if (loadingPermissions) {
     return (
@@ -213,6 +474,15 @@ export default function Firmware() {
             </p>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (loadingFirmware || loadingDeployments) {
+    return (
+      <div className="flex flex-col">
+        <TopBar title="Firmware Management" />
+        <div className="p-6 text-sm text-muted-foreground">Loading firmware...</div>
       </div>
     );
   }
@@ -250,15 +520,14 @@ export default function Firmware() {
 
             {canDeployFirmware && stagedVersion && (
               <button
-                onClick={() =>
-                  toast({
-                    title: "Deployment Started",
-                    description: `Rolling out ${stagedVersion.version} to ${selectedGroup} fleet`,
-                  })
-                }
-                className="flex items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
+                onClick={() => handleDeployFirmware(stagedVersion)}
+                disabled={submittingDeployId === stagedVersion.id}
+                className="flex items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Send className="h-4 w-4" /> Deploy {stagedVersion.version}
+                <Send className="h-4 w-4" />
+                {submittingDeployId === stagedVersion.id
+                  ? "Deploying..."
+                  : `Deploy ${stagedVersion.version}`}
               </button>
             )}
           </div>
@@ -319,10 +588,15 @@ export default function Firmware() {
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Released {new Date(activeVersion.releaseDate).toLocaleDateString()} ·{" "}
-                    {activeVersion.deviceCount} devices running this version
+                    Released{" "}
+                    {activeVersion.release_date
+                      ? new Date(activeVersion.release_date).toLocaleDateString()
+                      : "—"}{" "}
+                    · {devicesOnLatest} devices running this version
                   </p>
-                  <p className="mt-2 text-sm text-foreground/70">{activeVersion.notes}</p>
+                  <p className="mt-2 text-sm text-foreground/70">
+                    {activeVersion.release_notes || "No release notes provided."}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -361,8 +635,8 @@ export default function Firmware() {
 
             <div className="relative space-y-3 pl-6 before:absolute before:bottom-2 before:left-[11px] before:top-2 before:w-px before:bg-border">
               {firmwareByGroup.map((fw) => {
-                const deployCount = mockDeployments.filter(
-                  (d) => d.firmwareVersionId === fw.id
+                const deployCount = deployments.filter(
+                  (d) => d.firmware_version_id === fw.id
                 ).length;
                 const isExpanded = selectedVersion === fw.id;
 
@@ -399,8 +673,16 @@ export default function Firmware() {
                             )}
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {new Date(fw.releaseDate).toLocaleDateString()} ·{" "}
-                            {fw.deviceCount} devices
+                            {fw.release_date
+                              ? new Date(fw.release_date).toLocaleDateString()
+                              : "—"}{" "}
+                            ·{" "}
+                            {
+                              mockDevices.filter(
+                                (d) => d.firmwareVersion === fw.version
+                              ).length
+                            }{" "}
+                            devices
                           </p>
                         </div>
 
@@ -409,14 +691,13 @@ export default function Firmware() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toast({
-                                  title: "Deploying",
-                                  description: `${fw.version} deployment initiated`,
-                                });
+                                handleDeployFirmware(fw);
                               }}
-                              className="flex items-center gap-1 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/50"
+                              disabled={submittingDeployId === fw.id}
+                              className="flex items-center gap-1 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <Cpu className="h-3 w-3" /> Deploy
+                              <Cpu className="h-3 w-3" />
+                              {submittingDeployId === fw.id ? "Deploying..." : "Deploy"}
                             </button>
                           )}
 
@@ -425,8 +706,9 @@ export default function Firmware() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toast({
-                                  title: "Rollback Initiated",
-                                  description: `Rolling back from ${fw.version}`,
+                                  title: "Rollback not wired",
+                                  description:
+                                    "Rollback logic is not implemented yet.",
                                 });
                               }}
                               className="flex items-center gap-1 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-warning/50 hover:text-warning"
@@ -440,8 +722,9 @@ export default function Firmware() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toast({
-                                  title: "Reinstall",
-                                  description: `Reinstalling ${fw.version}`,
+                                  title: "Reinstall not wired",
+                                  description:
+                                    "Reinstall logic is not implemented yet.",
                                 });
                               }}
                               className="flex items-center gap-1 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/50 hover:text-accent"
@@ -460,7 +743,9 @@ export default function Firmware() {
 
                       {isExpanded && (
                         <div className="mt-3 space-y-3 border-t border-border pt-3">
-                          <p className="text-sm text-foreground/80">{fw.notes}</p>
+                          <p className="text-sm text-foreground/80">
+                            {fw.release_notes || "No release notes provided."}
+                          </p>
 
                           <div>
                             <p className="text-label mb-1.5 text-[10px]">
@@ -498,10 +783,10 @@ export default function Firmware() {
                             <p className="text-label mb-1.5 text-[10px]">
                               Deployment History
                             </p>
-                            {mockDeployments.filter((d) => d.firmwareVersionId === fw.id).length > 0 ? (
+                            {deployments.filter((d) => d.firmware_version_id === fw.id).length > 0 ? (
                               <div className="space-y-1.5">
-                                {mockDeployments
-                                  .filter((d) => d.firmwareVersionId === fw.id)
+                                {deployments
+                                  .filter((d) => d.firmware_version_id === fw.id)
                                   .map((dep) => (
                                     <div
                                       key={dep.id}
@@ -509,17 +794,21 @@ export default function Firmware() {
                                     >
                                       <div className="flex items-center gap-2">
                                         <span className="font-data text-xs text-foreground">
-                                          {getDeviceSerial(dep.deviceId)}
+                                          {dep.device_id
+                                            ? getDeviceSerial(dep.device_id)
+                                            : "Group deployment"}
                                         </span>
                                         <span className="text-[10px] text-muted-foreground">
-                                          by {dep.actor}
+                                          {dep.initiated_by_user_id
+                                            ? `by ${dep.initiated_by_user_id}`
+                                            : "system"}
                                         </span>
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className="font-data text-[11px] text-muted-foreground">
-                                          {new Date(dep.deployedAt).toLocaleDateString()}
+                                          {new Date(dep.created_at).toLocaleDateString()}
                                         </span>
-                                        <StatusBadge status={dep.result} />
+                                        <StatusBadge status={dep.status} />
                                       </div>
                                     </div>
                                   ))}
@@ -536,22 +825,34 @@ export default function Firmware() {
                   </div>
                 );
               })}
+
+              {firmwareByGroup.length === 0 && (
+                <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-kinetica">
+                  No firmware versions found.
+                </div>
+              )}
             </div>
           </div>
 
           <div className="space-y-4 lg:col-span-2">
             <SectionHeader title="Recent Deployments" />
             <div className="space-y-2">
-              {mockDeployments
+              {[...deployments]
                 .sort(
                   (a, b) =>
-                    new Date(b.deployedAt).getTime() -
-                    new Date(a.deployedAt).getTime()
+                    new Date(
+                      b.completed_at ?? b.started_at ?? b.created_at
+                    ).getTime() -
+                    new Date(
+                      a.completed_at ?? a.started_at ?? a.created_at
+                    ).getTime()
                 )
                 .map((dep) => {
-                  const fw = mockFirmwareVersions.find(
-                    (f) => f.id === dep.firmwareVersionId
+                  const fw = firmwareVersions.find(
+                    (f) => f.id === dep.firmware_version_id
                   );
+                  const displayDate =
+                    dep.completed_at ?? dep.started_at ?? dep.created_at;
 
                   return (
                     <div
@@ -562,25 +863,28 @@ export default function Firmware() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-data text-sm font-semibold text-foreground">
-                              {getDeviceSerial(dep.deviceId)}
+                              {dep.device_id
+                                ? getDeviceSerial(dep.device_id)
+                                : "Group deployment"}
                             </span>
-                            <StatusBadge status={dep.result} />
+                            <StatusBadge status={dep.status} />
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {fw?.version || "—"} · {dep.actor}
+                            {fw?.version || "—"} ·{" "}
+                            {dep.initiated_by_user_id || "system"}
                           </p>
                         </div>
                         <span className="font-data text-xs text-muted-foreground">
-                          {new Date(dep.deployedAt).toLocaleDateString()}
+                          {new Date(displayDate).toLocaleDateString()}
                         </span>
                       </div>
 
-                      {dep.result === "success" && (
+                      {dep.status === "success" && (
                         <div className="mt-2">
                           <Progress value={100} className="h-1.5" />
                         </div>
                       )}
-                      {dep.result === "in_progress" && (
+                      {dep.status === "in_progress" && (
                         <div className="mt-2">
                           <Progress value={65} className="h-1.5" />
                           <p className="font-data mt-0.5 text-[10px] text-muted-foreground">
@@ -588,11 +892,19 @@ export default function Firmware() {
                           </p>
                         </div>
                       )}
-                      {dep.result === "pending" && (
+                      {dep.status === "pending" && (
                         <div className="mt-2">
                           <Progress value={0} className="h-1.5" />
                           <p className="font-data mt-0.5 text-[10px] text-muted-foreground">
                             Queued
+                          </p>
+                        </div>
+                      )}
+                      {dep.status === "staged" && (
+                        <div className="mt-2">
+                          <Progress value={10} className="h-1.5" />
+                          <p className="font-data mt-0.5 text-[10px] text-muted-foreground">
+                            Staged
                           </p>
                         </div>
                       )}
@@ -635,7 +947,11 @@ export default function Firmware() {
                   <p className="text-label mb-1 text-[10px]">Success Rate</p>
                   <div className="flex items-center gap-2">
                     <Progress
-                      value={totalDeployments > 0 ? (successfulDeployments / totalDeployments) * 100 : 0}
+                      value={
+                        totalDeployments > 0
+                          ? (successfulDeployments / totalDeployments) * 100
+                          : 0
+                      }
                       className="h-2 flex-1"
                     />
                     <span className="font-data text-xs text-foreground">
@@ -730,7 +1046,11 @@ export default function Firmware() {
                       onChange={(e) =>
                         setUploadForm((prev) => ({
                           ...prev,
-                          updateType: e.target.value as "major" | "minor" | "patch" | "hotfix",
+                          updateType: e.target.value as
+                            | "major"
+                            | "minor"
+                            | "patch"
+                            | "hotfix",
                         }))
                       }
                       className="flex h-10 w-full rounded-lg border border-input bg-surface px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -751,6 +1071,7 @@ export default function Firmware() {
                     {(["test", "qa", "production"] as DeploymentGroup[]).map((g) => (
                       <button
                         key={g}
+                        type="button"
                         onClick={() =>
                           setUploadForm((prev) => ({ ...prev, targetGroup: g }))
                         }
@@ -791,10 +1112,11 @@ export default function Firmware() {
                 </button>
                 <button
                   onClick={handleUploadSubmit}
-                  disabled={!uploadForm.version || !uploadForm.fileName}
+                  disabled={!uploadForm.version || !uploadForm.fileName || submittingUpload}
                   className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Upload className="h-4 w-4" /> Upload &amp; Stage
+                  <Upload className="h-4 w-4" />
+                  {submittingUpload ? "Uploading..." : "Upload & Stage"}
                 </button>
               </div>
             </div>

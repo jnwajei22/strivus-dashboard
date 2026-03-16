@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/ui/kinetica";
-import { mockDevices, getPatientName } from "@/data/mock-data";
 import { Search, Plus, ChevronRight, Battery, Wifi } from "lucide-react";
 import Link from "next/link";
 import type { DeviceStatus } from "@/types";
@@ -33,11 +32,46 @@ type MeResponse = {
   permissions: Permission[];
 };
 
+type DeviceApiItem = {
+  id: string;
+  deviceSerial: string;
+  deviceUid: string | null;
+  displayName: string | null;
+  deviceModelId: string | null;
+  hardwareRevision: string | null;
+  firmwareVersionId: string | null;
+  currentPatientId: string | null;
+  deploymentGroupId: string | null;
+  status: DeviceStatus;
+  batteryPercent: number | null;
+  signalDbm: number | null;
+  lastSyncAt: string | null;
+  lastContactAt: string | null;
+  registeredAt: string | null;
+  retiredAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DevicesResponse = {
+  devices: DeviceApiItem[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+};
+
 export default function Devices() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceStatus | "all">("all");
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+
+  const [devices, setDevices] = useState<DeviceApiItem[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(true);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -91,15 +125,74 @@ export default function Devices() {
     PERMISSIONS.DEVICES_REGISTER
   );
 
+  useEffect(() => {
+    if (loadingPermissions) return;
+    if (!canReadDevices) {
+      setLoadingDevices(false);
+      setDevices([]);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadDevices() {
+      try {
+        setLoadingDevices(true);
+        setDevicesError(null);
+
+        const params = new URLSearchParams();
+
+        if (search.trim()) {
+          params.set("search", search.trim());
+        }
+
+        if (statusFilter !== "all") {
+          params.set("status", statusFilter);
+        }
+
+        const res = await fetch(`/api/devices?${params.toString()}`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const data: DevicesResponse | { error?: string } = await res.json();
+
+        if (!res.ok) {
+          throw new Error(
+            "error" in data && data.error ? data.error : "Failed to load devices"
+          );
+        }
+
+        if (!isMounted) return;
+
+        setDevices((data as DevicesResponse).devices ?? []);
+      } catch (error) {
+        console.error("Failed to load /api/devices:", error);
+
+        if (isMounted) {
+          setDevices([]);
+          setDevicesError(
+            error instanceof Error ? error.message : "Failed to load devices"
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingDevices(false);
+        }
+      }
+    }
+
+    loadDevices();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loadingPermissions, canReadDevices, search, statusFilter]);
+
   const filtered = useMemo(() => {
-    return mockDevices.filter((d) => {
-      const matchSearch =
-        d.serialNumber.toLowerCase().includes(search.toLowerCase()) ||
-        d.model.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === "all" || d.status === statusFilter;
-      return matchSearch && matchStatus;
-    });
-  }, [search, statusFilter]);
+    return devices;
+  }, [devices]);
 
   if (loadingPermissions) {
     return (
@@ -168,70 +261,93 @@ export default function Devices() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((device) => (
-            <Link
-              key={device.id}
-              href={`/devices/${device.id}`}
-              className="group rounded-xl border border-border bg-card p-4 shadow-kinetica transition-all hover:border-primary/30"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-data text-sm font-medium text-foreground">
-                    {device.serialNumber}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{device.model}</p>
+        {loadingDevices ? (
+          <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground shadow-kinetica">
+            Loading devices...
+          </div>
+        ) : devicesError ? (
+          <div className="rounded-xl border border-border bg-card p-6 text-sm text-destructive shadow-kinetica">
+            {devicesError}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground shadow-kinetica">
+            No devices found.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filtered.map((device) => (
+              <Link
+                key={device.id}
+                href={`/devices/${device.id}`}
+                className="group rounded-xl border border-border bg-card p-4 shadow-kinetica transition-all hover:border-primary/30"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-data text-sm font-medium text-foreground">
+                      {device.deviceSerial}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {device.displayName || device.hardwareRevision || "Unnamed device"}
+                    </p>
+                  </div>
+                  <StatusBadge status={device.status} />
                 </div>
-                <StatusBadge status={device.status} />
-              </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-label text-[10px]">Patient</span>
-                  <p className="mt-0.5 truncate text-xs text-foreground">
-                    {device.patientId ? getPatientName(device.patientId) : "Unassigned"}
-                  </p>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-label text-[10px]">Patient ID</span>
+                    <p className="mt-0.5 truncate text-xs text-foreground">
+                      {device.currentPatientId || "Unassigned"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="text-label text-[10px]">Firmware ID</span>
+                    <p className="font-data mt-0.5 truncate text-xs text-foreground">
+                      {device.firmwareVersionId || "—"}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Battery className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span
+                      className={`font-data text-xs ${
+                        device.batteryPercent != null && device.batteryPercent < 30
+                          ? "text-warning"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {device.batteryPercent != null ? `${device.batteryPercent}%` : "—"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span
+                      className={`font-data text-xs ${
+                        device.signalDbm != null && device.signalDbm < -70
+                          ? "text-warning"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {device.signalDbm != null ? `${device.signalDbm} dBm` : "—"}
+                    </span>
+                  </div>
                 </div>
 
-                <div>
-                  <span className="text-label text-[10px]">Firmware</span>
-                  <p className="font-data mt-0.5 text-xs text-foreground">
-                    {device.firmwareVersion}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <Battery className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span
-                    className={`font-data text-xs ${
-                      device.battery < 30 ? "text-warning" : "text-foreground"
-                    }`}
-                  >
-                    {device.battery}%
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                  <span className="font-data text-[11px] text-muted-foreground">
+                    Last contact:{" "}
+                    {device.lastContactAt
+                      ? new Date(device.lastContactAt).toLocaleString()
+                      : "—"}
                   </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
                 </div>
-
-                <div className="flex items-center gap-1.5">
-                  <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span
-                    className={`font-data text-xs ${
-                      device.signal < -70 ? "text-warning" : "text-foreground"
-                    }`}
-                  >
-                    {device.signal} dBm
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                <span className="font-data text-[11px] text-muted-foreground">
-                  Last contact: {new Date(device.lastContact).toLocaleString()}
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
