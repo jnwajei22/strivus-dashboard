@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import {
   PERMISSIONS,
@@ -83,11 +85,24 @@ export default function SessionSettingsPage() {
     PERMISSIONS.SETTINGS_UPDATE_PROFILE,
   ]);
 
+  const backButton = (
+    <Link
+      href="/settings"
+      className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" />
+      Back to Settings
+    </Link>
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col w-full">
         <TopBar title="Session Settings" />
-        <div className="p-6 text-sm text-muted-foreground">Loading...</div>
+        <div className="p-6">
+          <div className="mb-6">{backButton}</div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        </div>
       </div>
     );
   }
@@ -97,6 +112,7 @@ export default function SessionSettingsPage() {
       <div className="flex flex-col w-full">
         <TopBar title="Session Settings" />
         <div className="p-6">
+          <div className="mb-6">{backButton}</div>
           <div className="rounded-xl border border-border bg-card p-6 shadow-kinetica">
             <h2 className="text-base font-semibold text-foreground">Access denied</h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -119,6 +135,8 @@ export default function SessionSettingsPage() {
       <TopBar title="Session Settings" />
 
       <div className="flex-1 w-full p-6">
+        <div className="mb-6">{backButton}</div>
+
         <div className="w-full grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           <SessionCard label="Signed in as" value={name} />
           <SessionCard label="Email" value={user?.email ?? "—"} />

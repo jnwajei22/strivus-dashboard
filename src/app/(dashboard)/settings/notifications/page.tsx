@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -333,11 +335,24 @@ export default function NotificationSettingsPage() {
     ]);
   }
 
+  const backButton = (
+    <Link
+      href="/settings"
+      className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" />
+      Back to Settings
+    </Link>
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col w-full">
         <TopBar title="Notification Settings" />
-        <div className="p-6 text-sm text-muted-foreground">Loading...</div>
+        <div className="p-6">
+          <div className="mb-6">{backButton}</div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        </div>
       </div>
     );
   }
@@ -347,6 +362,7 @@ export default function NotificationSettingsPage() {
       <div className="flex flex-col w-full">
         <TopBar title="Notification Settings" />
         <div className="p-6">
+          <div className="mb-6">{backButton}</div>
           <div className="rounded-xl border border-border bg-card p-6 shadow-kinetica">
             <h2 className="text-base font-semibold text-foreground">Access denied</h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -363,6 +379,8 @@ export default function NotificationSettingsPage() {
       <TopBar title="Notification Settings" />
 
       <div className="flex-1 w-full p-6">
+        <div className="mb-6">{backButton}</div>
+
         <div className="flex w-full flex-col gap-6">
           <div className="rounded-2xl border border-border bg-card p-6 shadow-kinetica">
             <h1 className="text-2xl font-semibold text-foreground">Notifications</h1>
@@ -380,7 +398,7 @@ export default function NotificationSettingsPage() {
                 <h2 className="text-base font-semibold text-foreground">{category}</h2>
               </div>
 
-              <div className="hidden md:grid md:grid-cols-[minmax(0,1.8fr)_140px_140px_96px] md:items-center md:gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="hidden border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,1.8fr)_140px_140px_96px] md:items-center md:gap-4">
                 <div>Notification</div>
                 <div className="text-center">Email</div>
                 <div className="text-center">Push</div>

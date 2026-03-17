@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { toast } from "@/hooks/use-toast";
@@ -8,7 +9,7 @@ import {
   hasPermission,
   type Permission,
 } from "@/lib/auth/permissions";
-import { RefreshCw, Sliders, ExternalLink } from "lucide-react";
+import { ArrowLeft, RefreshCw, Sliders, ExternalLink } from "lucide-react";
 
 type MeResponse = {
   user: { id: string; email: string } | null;
@@ -363,11 +364,24 @@ export default function IntegrationsSettingsPage() {
     });
   }
 
+  const backButton = (
+    <Link
+      href="/settings"
+      className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" />
+      Back to Settings
+    </Link>
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col w-full">
         <TopBar title="Integrations" />
-        <div className="p-6 text-sm text-muted-foreground">Loading...</div>
+        <div className="p-6">
+          <div className="mb-6">{backButton}</div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        </div>
       </div>
     );
   }
@@ -377,6 +391,7 @@ export default function IntegrationsSettingsPage() {
       <div className="flex flex-col w-full">
         <TopBar title="Integrations" />
         <div className="p-6">
+          <div className="mb-6">{backButton}</div>
           <div className="rounded-xl border border-border bg-card p-6 shadow-kinetica">
             <h2 className="text-base font-semibold text-foreground">Access denied</h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -394,6 +409,8 @@ export default function IntegrationsSettingsPage() {
 
       <div className="flex-1 w-full p-6">
         <div className="w-full max-w-none space-y-6">
+          <div>{backButton}</div>
+
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Integrations</h1>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -408,7 +425,7 @@ export default function IntegrationsSettingsPage() {
                 className="rounded-2xl border border-border bg-card p-5 shadow-kinetica"
               >
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
+                  <div className="flex min-w-0 items-start gap-3">
                     <span
                       className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDot(
                         integration.status
@@ -423,7 +440,7 @@ export default function IntegrationsSettingsPage() {
                       </p>
 
                       {integration.endpointValue ? (
-                        <p className="mt-2 font-mono text-[11px] text-muted-foreground/70 break-all">
+                        <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground/70">
                           {integration.endpointLabel}: {integration.endpointValue}
                         </p>
                       ) : (

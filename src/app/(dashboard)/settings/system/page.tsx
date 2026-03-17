@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -222,7 +224,6 @@ export default function SystemSettingsPage() {
           requireHumanApproval: getBoolean(automation.requireHumanApproval, true),
           maxActionsPerHour: getNumberString(automation.maxActionsPerHour, "20"),
 
-          // Replace-only secret fields stay blank on load unless backend explicitly returns them.
           openAiApiKey: "",
           internalServiceToken: "",
           emailProviderApiKey: "",
@@ -625,11 +626,24 @@ export default function SystemSettingsPage() {
   const labelClass =
     "mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
 
+  const backButton = (
+    <Link
+      href="/settings"
+      className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" />
+      Back to Settings
+    </Link>
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col w-full">
         <TopBar title="System Settings" />
-        <div className="p-6 text-sm text-muted-foreground">Loading...</div>
+        <div className="p-6">
+          <div className="mb-6">{backButton}</div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        </div>
       </div>
     );
   }
@@ -639,6 +653,7 @@ export default function SystemSettingsPage() {
       <div className="flex flex-col w-full">
         <TopBar title="System Settings" />
         <div className="p-6">
+          <div className="mb-6">{backButton}</div>
           <div className="rounded-xl border border-border bg-card p-6 shadow-kinetica">
             <h2 className="text-base font-semibold text-foreground">Access denied</h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -662,6 +677,8 @@ export default function SystemSettingsPage() {
 
       <div className="flex-1 w-full p-6">
         <div className="w-full max-w-none space-y-8">
+          <div>{backButton}</div>
+
           <div>
             <h3 className="text-lg font-semibold text-foreground">System Settings</h3>
             <p className="text-sm text-muted-foreground">
