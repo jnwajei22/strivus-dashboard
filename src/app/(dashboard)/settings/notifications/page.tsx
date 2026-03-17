@@ -20,7 +20,6 @@ type NotificationPreference = {
   alertKey: string;
   emailEnabled: boolean;
   pushEnabled: boolean;
-  inAppEnabled: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -33,13 +32,109 @@ type NotificationApiRow = {
   emailEnabled?: boolean;
   push_enabled?: boolean;
   pushEnabled?: boolean;
-  in_app_enabled?: boolean;
-  inAppEnabled?: boolean;
   created_at?: string;
   createdAt?: string;
   updated_at?: string;
   updatedAt?: string;
 };
+
+type NotificationDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  category: "Monitoring" | "Firmware" | "Patients" | "System" | "Security";
+  defaults: {
+    emailEnabled: boolean;
+    pushEnabled: boolean;
+  };
+};
+
+const NOTIFICATION_DEFINITIONS: NotificationDefinition[] = [
+  {
+    key: "device_offline",
+    label: "Device offline",
+    description: "Get alerted when a device stops checking in.",
+    category: "Monitoring",
+    defaults: { emailEnabled: true, pushEnabled: true },
+  },
+  {
+    key: "device_low_battery",
+    label: "Low battery",
+    description: "Get alerted when a device battery drops below threshold.",
+    category: "Monitoring",
+    defaults: { emailEnabled: true, pushEnabled: false },
+  },
+  {
+    key: "device_sync_failed",
+    label: "Sync failed",
+    description: "Get alerted when a device cannot sync data successfully.",
+    category: "Monitoring",
+    defaults: { emailEnabled: true, pushEnabled: false },
+  },
+  {
+    key: "firmware_deployment_started",
+    label: "Deployment started",
+    description: "Get alerted when a firmware rollout begins.",
+    category: "Firmware",
+    defaults: { emailEnabled: false, pushEnabled: false },
+  },
+  {
+    key: "firmware_deployment_failed",
+    label: "Deployment failed",
+    description: "Get alerted when a firmware deployment fails.",
+    category: "Firmware",
+    defaults: { emailEnabled: true, pushEnabled: true },
+  },
+  {
+    key: "firmware_deployment_completed",
+    label: "Deployment completed",
+    description: "Get alerted when a firmware deployment finishes successfully.",
+    category: "Firmware",
+    defaults: { emailEnabled: false, pushEnabled: false },
+  },
+  {
+    key: "patient_flag_created",
+    label: "Patient flag created",
+    description: "Get alerted when a patient receives a new clinical flag.",
+    category: "Patients",
+    defaults: { emailEnabled: true, pushEnabled: false },
+  },
+  {
+    key: "patient_session_missed",
+    label: "Missed session",
+    description: "Get alerted when a patient misses a scheduled session.",
+    category: "Patients",
+    defaults: { emailEnabled: true, pushEnabled: false },
+  },
+  {
+    key: "new_user_invite",
+    label: "New user invite",
+    description: "Get alerted when a new user is invited into the platform.",
+    category: "Security",
+    defaults: { emailEnabled: false, pushEnabled: false },
+  },
+  {
+    key: "role_changed",
+    label: "Role changed",
+    description: "Get alerted when a user role or access level changes.",
+    category: "Security",
+    defaults: { emailEnabled: true, pushEnabled: false },
+  },
+  {
+    key: "integration_failed",
+    label: "Integration failed",
+    description: "Get alerted when an external integration check fails.",
+    category: "System",
+    defaults: { emailEnabled: true, pushEnabled: true },
+  },
+  {
+    key: "system_announcement",
+    label: "System announcements",
+    description: "Get platform-wide maintenance or operational announcements.",
+    category: "System",
+    defaults: { emailEnabled: true, pushEnabled: false },
+  },
+];
 
 function normalizeRow(row: NotificationApiRow): NotificationPreference {
   return {
@@ -47,7 +142,6 @@ function normalizeRow(row: NotificationApiRow): NotificationPreference {
     alertKey: String(row.alertKey ?? row.alert_key ?? ""),
     emailEnabled: Boolean(row.emailEnabled ?? row.email_enabled),
     pushEnabled: Boolean(row.pushEnabled ?? row.push_enabled),
-    inAppEnabled: Boolean(row.inAppEnabled ?? row.in_app_enabled),
     createdAt: row.createdAt ?? row.created_at,
     updatedAt: row.updatedAt ?? row.updated_at,
   };
@@ -56,10 +150,7 @@ function normalizeRow(row: NotificationApiRow): NotificationPreference {
 export default function NotificationSettingsPage() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [items, setItems] = useState<NotificationPreference[]>([]);
-  const [newAlertKey, setNewAlertKey] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -132,137 +223,114 @@ export default function NotificationSettingsPage() {
 
   const canEdit = hasPermission(permissions, PERMISSIONS.SETTINGS_UPDATE_PROFILE);
 
-  const sortedItems = useMemo(
-    () => [...items].sort((a, b) => a.alertKey.localeCompare(b.alertKey)),
-    [items]
-  );
+  const itemMap = useMemo(() => {
+    return new Map(items.map((item) => [item.alertKey, item]));
+  }, [items]);
 
-  function updateLocal(id: string, patch: Partial<NotificationPreference>) {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
-  }
+  const definitionRows = useMemo(() => {
+    return NOTIFICATION_DEFINITIONS.map((def) => {
+      const existing = itemMap.get(def.key);
 
-  async function persistRow(row: NotificationPreference) {
+      return {
+        definition: def,
+        preference: existing ?? {
+          id: "",
+          alertKey: def.key,
+          emailEnabled: def.defaults.emailEnabled,
+          pushEnabled: def.defaults.pushEnabled,
+        },
+      };
+    });
+  }, [itemMap]);
+
+  const groupedRows = useMemo(() => {
+    const groups = new Map<string, typeof definitionRows>();
+
+    for (const row of definitionRows) {
+      const existing = groups.get(row.definition.category) ?? [];
+      existing.push(row);
+      groups.set(row.definition.category, existing);
+    }
+
+    return Array.from(groups.entries());
+  }, [definitionRows]);
+
+  async function savePreference(row: NotificationPreference) {
     try {
-      setSavingId(row.id);
+      setSavingKey(row.alertKey);
 
-      const res = await fetch(`/api/settings/notifications/${row.id}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          alert_key: row.alertKey,
-          email_enabled: row.emailEnabled,
-          push_enabled: row.pushEnabled,
-          in_app_enabled: row.inAppEnabled,
-        }),
-      });
+      const isExisting = Boolean(row.id);
+
+      const res = await fetch(
+        isExisting
+          ? `/api/settings/notifications/${row.id}`
+          : "/api/settings/notifications",
+        {
+          method: isExisting ? "PATCH" : "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            alert_key: row.alertKey,
+            email_enabled: row.emailEnabled,
+            push_enabled: row.pushEnabled,
+          }),
+        }
+      );
 
       const json = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to update notification preference");
+        throw new Error(json?.error || "Failed to save notification preference");
       }
 
-      if (json) {
-        updateLocal(row.id, normalizeRow(json));
-      }
+      const saved = normalizeRow(json);
+
+      setItems((prev) => {
+        const others = prev.filter(
+          (item) => item.id !== saved.id && item.alertKey !== saved.alertKey
+        );
+        return [...others, saved];
+      });
 
       toast({
         title: "Notification updated",
         description: `Saved ${row.alertKey}.`,
       });
     } catch (error) {
-      console.error("Failed to update notification preference:", error);
+      console.error("Failed to save notification preference:", error);
       toast({
-        title: "Update failed",
+        title: "Save failed",
         description: String(error),
         variant: "destructive",
       });
     } finally {
-      setSavingId(null);
+      setSavingKey(null);
     }
   }
 
-  async function createRow() {
-    const alertKey = newAlertKey.trim();
-    if (!alertKey) return;
+  function updateDraft(alertKey: string, patch: Partial<NotificationPreference>) {
+    const existing = itemMap.get(alertKey);
 
-    try {
-      setCreating(true);
-
-      const res = await fetch("/api/settings/notifications", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          alert_key: alertKey,
-          email_enabled: true,
-          push_enabled: false,
-          in_app_enabled: true,
-        }),
-      });
-
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        throw new Error(json?.error || "Failed to create notification preference");
-      }
-
-      const created = normalizeRow(json);
-      setItems((prev) => {
-        const withoutDuplicate = prev.filter(
-          (item) => item.id !== created.id && item.alertKey !== created.alertKey
-        );
-        return [...withoutDuplicate, created];
-      });
-      setNewAlertKey("");
-
-      toast({
-        title: "Notification created",
-        description: `Added ${created.alertKey}.`,
-      });
-    } catch (error) {
-      console.error("Failed to create notification preference:", error);
-      toast({
-        title: "Create failed",
-        description: String(error),
-        variant: "destructive",
-      });
-    } finally {
-      setCreating(false);
+    if (existing) {
+      setItems((prev) =>
+        prev.map((item) => (item.alertKey === alertKey ? { ...item, ...patch } : item))
+      );
+      return;
     }
-  }
 
-  async function deleteRow(id: string) {
-    try {
-      setDeletingId(id);
+    const definition = NOTIFICATION_DEFINITIONS.find((d) => d.key === alertKey);
+    if (!definition) return;
 
-      const res = await fetch(`/api/settings/notifications/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        throw new Error(json?.error || "Failed to delete notification preference");
-      }
-
-      setItems((prev) => prev.filter((item) => item.id !== id));
-
-      toast({
-        title: "Notification removed",
-      });
-    } catch (error) {
-      console.error("Failed to delete notification preference:", error);
-      toast({
-        title: "Delete failed",
-        description: String(error),
-        variant: "destructive",
-      });
-    } finally {
-      setDeletingId(null);
-    }
+    setItems((prev) => [
+      ...prev,
+      {
+        id: "",
+        alertKey,
+        emailEnabled: definition.defaults.emailEnabled,
+        pushEnabled: definition.defaults.pushEnabled,
+        ...patch,
+      },
+    ]);
   }
 
   if (loading) {
@@ -295,105 +363,86 @@ export default function NotificationSettingsPage() {
       <TopBar title="Notification Settings" />
 
       <div className="flex-1 w-full p-6">
-        <div className="w-full flex flex-col gap-6">
+        <div className="flex w-full flex-col gap-6">
           <div className="rounded-2xl border border-border bg-card p-6 shadow-kinetica">
             <h1 className="text-2xl font-semibold text-foreground">Notifications</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Control how alerts reach you. Less chaos, more signal.
+              Choose how you want important events delivered.
             </p>
-
-            {canEdit && (
-              <div className="mt-6 flex flex-col gap-3 md:flex-row">
-                <input
-                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm md:max-w-md"
-                  placeholder="New alert key (example: device_offline)"
-                  value={newAlertKey}
-                  onChange={(e) => setNewAlertKey(e.target.value)}
-                />
-                <button
-                  onClick={createRow}
-                  disabled={creating || !newAlertKey.trim()}
-                  className="inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {creating ? "Creating..." : "Add preference"}
-                </button>
-              </div>
-            )}
           </div>
 
-          <div className="rounded-2xl border border-border bg-card shadow-kinetica overflow-hidden">
-            <div className="grid grid-cols-12 gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <div className="col-span-4">Alert key</div>
-              <div className="col-span-2">Email</div>
-              <div className="col-span-2">Push</div>
-              <div className="col-span-2">In-app</div>
-              <div className="col-span-2 text-right">Actions</div>
-            </div>
-
-            {sortedItems.length === 0 ? (
-              <div className="px-6 py-8 text-sm text-muted-foreground">
-                No notification preferences found.
+          {groupedRows.map(([category, rows]) => (
+            <section
+              key={category}
+              className="overflow-hidden rounded-2xl border border-border bg-card shadow-kinetica"
+            >
+              <div className="border-b border-border px-6 py-4">
+                <h2 className="text-base font-semibold text-foreground">{category}</h2>
               </div>
-            ) : (
-              sortedItems.map((item) => (
+
+              <div className="hidden md:grid md:grid-cols-[minmax(0,1.8fr)_140px_140px_96px] md:items-center md:gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div>Notification</div>
+                <div className="text-center">Email</div>
+                <div className="text-center">Push</div>
+                <div className="text-right">Action</div>
+              </div>
+
+              {rows.map(({ definition, preference }) => (
                 <div
-                  key={item.id}
-                  className="grid grid-cols-12 gap-4 border-b border-border px-6 py-4 last:border-b-0"
+                  key={definition.key}
+                  className="border-b border-border px-6 py-4 last:border-b-0"
                 >
-                  <div className="col-span-12 md:col-span-4">
-                    <input
-                      className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                      value={item.alertKey}
-                      disabled
-                      readOnly
-                    />
-                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.8fr)_140px_140px_96px] md:items-center md:gap-4">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">{definition.label}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {definition.description}
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Key: <code>{definition.key}</code>
+                      </div>
+                    </div>
 
-                  <div className="col-span-4 md:col-span-2">
-                    <ToggleCell
-                      checked={item.emailEnabled}
-                      disabled={!canEdit}
-                      onChange={(checked) => updateLocal(item.id, { emailEnabled: checked })}
-                    />
-                  </div>
+                    <div className="flex items-center justify-between gap-3 md:block">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground md:hidden">
+                        Email
+                      </span>
+                      <ToggleCell
+                        checked={preference.emailEnabled}
+                        disabled={!canEdit}
+                        onChange={(checked) =>
+                          updateDraft(definition.key, { emailEnabled: checked })
+                        }
+                      />
+                    </div>
 
-                  <div className="col-span-4 md:col-span-2">
-                    <ToggleCell
-                      checked={item.pushEnabled}
-                      disabled={!canEdit}
-                      onChange={(checked) => updateLocal(item.id, { pushEnabled: checked })}
-                    />
-                  </div>
+                    <div className="flex items-center justify-between gap-3 md:block">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground md:hidden">
+                        Push
+                      </span>
+                      <ToggleCell
+                        checked={preference.pushEnabled}
+                        disabled={!canEdit}
+                        onChange={(checked) =>
+                          updateDraft(definition.key, { pushEnabled: checked })
+                        }
+                      />
+                    </div>
 
-                  <div className="col-span-4 md:col-span-2">
-                    <ToggleCell
-                      checked={item.inAppEnabled}
-                      disabled={!canEdit}
-                      onChange={(checked) => updateLocal(item.id, { inAppEnabled: checked })}
-                    />
-                  </div>
-
-                  <div className="col-span-12 md:col-span-2 flex justify-end gap-2">
-                    <button
-                      onClick={() => persistRow(item)}
-                      disabled={!canEdit || savingId === item.id}
-                      className="inline-flex h-11 items-center rounded-lg border border-border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {savingId === item.id ? "Saving..." : "Save"}
-                    </button>
-
-                    <button
-                      onClick={() => deleteRow(item.id)}
-                      disabled={!canEdit || deletingId === item.id}
-                      className="inline-flex h-11 items-center rounded-lg border border-red-300 px-3 text-sm font-medium text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {deletingId === item.id ? "Deleting..." : "Delete"}
-                    </button>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => savePreference(preference)}
+                        disabled={!canEdit || savingKey === definition.key}
+                        className="inline-flex h-11 items-center rounded-lg border border-border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {savingKey === definition.key ? "Saving..." : "Save"}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </section>
+          ))}
         </div>
       </div>
     </div>
@@ -410,7 +459,7 @@ function ToggleCell({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex h-11 items-center justify-center rounded-lg border border-border bg-background">
+    <label className="flex h-11 w-[140px] items-center justify-center rounded-lg border border-border bg-background">
       <input
         type="checkbox"
         checked={checked}
