@@ -285,7 +285,7 @@ export default function SystemSettingsPage() {
         body: JSON.stringify({
           category,
           key,
-          valueJson,
+          value_json: valueJson,
         }),
       });
 
@@ -305,7 +305,7 @@ export default function SystemSettingsPage() {
       body: JSON.stringify({
         category,
         key,
-        valueJson,
+        value_json: valueJson,
       }),
     });
 
@@ -495,7 +495,7 @@ export default function SystemSettingsPage() {
         body: JSON.stringify({
           category: newCustomCategory.trim(),
           key: newCustomKey.trim(),
-          valueJson: parsed,
+          value_json: parsed,
         }),
       });
 
@@ -557,7 +557,7 @@ export default function SystemSettingsPage() {
         body: JSON.stringify({
           category: item.category,
           key: item.key,
-          valueJson: parsed,
+          value_json: parsed,
         }),
       });
 
