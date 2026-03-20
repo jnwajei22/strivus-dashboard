@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { requirePermission } from "@/lib/server/auth/guards"
 import { PERMISSIONS } from "@/lib/server/auth/permissions"
 import {
-  deleteDeviceLog,
-  getDeviceLogById,
-  updateDeviceLog,
+  deleteLogNote,
+  getLogNoteById,
+  updateLogNote,
 } from "@/lib/server/logs/queries"
-import { mapDeviceLogRowToApi } from "@/lib/server/logs/mappers"
-import { validateUpdateDeviceLogInput } from "@/lib/server/logs/validators"
+import { mapLogNoteRowToApi } from "@/lib/server/logs/mappers"
+import { validateUpdateLogNoteInput } from "@/lib/server/logs/validators"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -29,24 +29,24 @@ export async function GET(_: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
   if (!isUuid(id)) {
-    return NextResponse.json({ error: "Invalid log id" }, { status: 400 })
+    return NextResponse.json({ error: "Invalid log note id" }, { status: 400 })
   }
 
   try {
-    const row = await getDeviceLogById(id)
+    const row = await getLogNoteById(id)
 
     if (!row) {
-      return NextResponse.json({ error: "Log not found" }, { status: 404 })
+      return NextResponse.json({ error: "Log note not found" }, { status: 404 })
     }
 
     return NextResponse.json(
-      { log: mapDeviceLogRowToApi(row) },
+      { note: mapLogNoteRowToApi(row) },
       { status: 200 }
     )
   } catch (error) {
-    console.error("GET /api/logs/[id] failed:", error)
+    console.error("GET /api/log-notes/[id] failed:", error)
     return NextResponse.json(
-      { error: "Failed to load log", details: String(error) },
+      { error: "Failed to load log note", details: String(error) },
       { status: 500 }
     )
   }
@@ -62,12 +62,12 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
   if (!isUuid(id)) {
-    return NextResponse.json({ error: "Invalid log id" }, { status: 400 })
+    return NextResponse.json({ error: "Invalid log note id" }, { status: 400 })
   }
 
   try {
     const body = await req.json()
-    const input = validateUpdateDeviceLogInput(body)
+    const input = validateUpdateLogNoteInput(body)
 
     if (Object.keys(input).length === 0) {
       return NextResponse.json(
@@ -76,21 +76,32 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       )
     }
 
-    if (input.lineCount !== undefined && input.lineCount !== null) {
-      if (!Number.isInteger(input.lineCount) || input.lineCount < 0) {
-        return NextResponse.json(
-          { error: "lineCount must be a non-negative integer" },
-          { status: 400 }
-        )
-      }
+    if (input.authorUserId !== undefined && input.authorUserId !== null && !isUuid(input.authorUserId)) {
+      return NextResponse.json({ error: "Invalid authorUserId" }, { status: 400 })
     }
 
-    const existing = await getDeviceLogById(id)
+    if (input.linkedPatientId !== undefined && input.linkedPatientId !== null && !isUuid(input.linkedPatientId)) {
+      return NextResponse.json({ error: "Invalid linkedPatientId" }, { status: 400 })
+    }
+
+    if (input.linkedDeviceId !== undefined && input.linkedDeviceId !== null && !isUuid(input.linkedDeviceId)) {
+      return NextResponse.json({ error: "Invalid linkedDeviceId" }, { status: 400 })
+    }
+
+    if (input.relatedSessionId !== undefined && input.relatedSessionId !== null && !isUuid(input.relatedSessionId)) {
+      return NextResponse.json({ error: "Invalid relatedSessionId" }, { status: 400 })
+    }
+
+    if (input.relatedCommandId !== undefined && input.relatedCommandId !== null && !isUuid(input.relatedCommandId)) {
+      return NextResponse.json({ error: "Invalid relatedCommandId" }, { status: 400 })
+    }
+
+    const existing = await getLogNoteById(id)
     if (!existing) {
-      return NextResponse.json({ error: "Log not found" }, { status: 404 })
+      return NextResponse.json({ error: "Log note not found" }, { status: 404 })
     }
 
-    const row = await updateDeviceLog(id, input)
+    const row = await updateLogNote(id, input)
 
     if (!row) {
       return NextResponse.json(
@@ -100,14 +111,14 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json(
-      { log: mapDeviceLogRowToApi(row) },
+      { note: mapLogNoteRowToApi(row) },
       { status: 200 }
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
 
     return NextResponse.json(
-      { error: message || "Failed to update log" },
+      { error: message || "Failed to update log note" },
       { status: 400 }
     )
   }
@@ -123,21 +134,21 @@ export async function DELETE(_: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
   if (!isUuid(id)) {
-    return NextResponse.json({ error: "Invalid log id" }, { status: 400 })
+    return NextResponse.json({ error: "Invalid log note id" }, { status: 400 })
   }
 
   try {
-    const deleted = await deleteDeviceLog(id)
+    const deleted = await deleteLogNote(id)
 
     if (!deleted) {
-      return NextResponse.json({ error: "Log not found" }, { status: 404 })
+      return NextResponse.json({ error: "Log note not found" }, { status: 404 })
     }
 
     return NextResponse.json({ success: true, id }, { status: 200 })
   } catch (error) {
-    console.error("DELETE /api/logs/[id] failed:", error)
+    console.error("DELETE /api/log-notes/[id] failed:", error)
     return NextResponse.json(
-      { error: "Failed to delete log", details: String(error) },
+      { error: "Failed to delete log note", details: String(error) },
       { status: 500 }
     )
   }
