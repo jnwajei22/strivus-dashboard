@@ -1,72 +1,39 @@
-// src/app/api/auth/request-code/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@/lib/db";
-import { generateCode, hashValue } from "@/lib/auth/session";
-
-const PURPOSE = "login";
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
+import { generateCode, hashValue } from "@/lib/server/auth/tokens";
+import {
+  findUserByEmail,
+  insertVerificationCode,
+  invalidateActiveVerificationCodes,
+} from "@/lib/server/auth/queries";
+import {
+  AuthValidationError,
+  parseRequestCodeInput,
+} from "@/lib/server/auth/validators";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const email = normalizeEmail(String(body.email ?? ""));
+    const { email } = parseRequestCodeInput(body);
 
-    if (!email) {
-      return NextResponse.json(
-        { error: "Email is required" },
-        { status: 400 }
-      );
-    }
+    const user = await findUserByEmail(email);
 
-    const users = await sql`
-      SELECT id, email
-      FROM users
-      WHERE lower(email) = ${email}
-      LIMIT 1
-    `;
-
-    if (users.length === 0) {
+    if (!user) {
       return NextResponse.json(
         { error: "No account found for that email" },
         { status: 404 }
       );
     }
 
-    const user = users[0];
     const code = generateCode();
     const codeHash = hashValue(code);
 
-    await sql`
-      UPDATE verification_codes
-      SET used_at = now()
-      WHERE lower(email) = ${email}
-        AND purpose = ${PURPOSE}
-        AND used_at IS NULL
-    `;
+    await invalidateActiveVerificationCodes(email);
 
-    await sql`
-      INSERT INTO verification_codes (
-        user_id,
-        email,
-        code_hash,
-        purpose,
-        expires_at,
-        used_at,
-        attempt_count
-      )
-      VALUES (
-        ${user.id},
-        ${email},
-        ${codeHash},
-        ${PURPOSE},
-        now() + interval '10 minutes',
-        NULL,
-        0
-      )
-    `;
+    await insertVerificationCode({
+      userId: user.id,
+      email,
+      codeHash,
+    });
 
     if (process.env.NODE_ENV !== "production") {
       console.log(`Login code for ${email} is ${code}`);
@@ -77,6 +44,13 @@ export async function POST(req: NextRequest) {
       ...(process.env.NODE_ENV !== "production" ? { devCode: code } : {}),
     });
   } catch (error) {
+    if (error instanceof AuthValidationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+
     console.error("POST /api/auth/request-code error:", error);
 
     return NextResponse.json(

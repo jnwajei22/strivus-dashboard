@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requirePermission } from "@/lib/server/auth/guards"
-import { PERMISSIONS } from "@/lib/server/auth/permissions"
+import { PERMISSIONS } from "@/lib/auth/permissions"
 import {
   createLogNote,
   listLogNotes,
@@ -36,6 +36,13 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const params = parseListLogNotesParams(searchParams)
+
+    if (params.parentNoteId && !isUuid(params.parentNoteId)) {
+      return NextResponse.json(
+        { error: "Invalid parentNoteId" },
+        { status: 400 }
+      )
+    }
 
     if (params.linkedPatientId && !isUuid(params.linkedPatientId)) {
       return NextResponse.json(
@@ -84,29 +91,56 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const input = validateCreateLogNoteInput(body)
 
-    if (input.authorUserId !== undefined && input.authorUserId !== null && !isUuid(input.authorUserId)) {
+    if (
+      input.parentNoteId !== undefined &&
+      input.parentNoteId !== null &&
+      !isUuid(input.parentNoteId)
+    ) {
+      return NextResponse.json({ error: "Invalid parentNoteId" }, { status: 400 })
+    }
+
+    if (
+      input.authorUserId !== undefined &&
+      input.authorUserId !== null &&
+      !isUuid(input.authorUserId)
+    ) {
       return NextResponse.json({ error: "Invalid authorUserId" }, { status: 400 })
     }
 
-    if (input.linkedPatientId !== undefined && input.linkedPatientId !== null && !isUuid(input.linkedPatientId)) {
+    if (
+      input.linkedPatientId !== undefined &&
+      input.linkedPatientId !== null &&
+      !isUuid(input.linkedPatientId)
+    ) {
       return NextResponse.json({ error: "Invalid linkedPatientId" }, { status: 400 })
     }
 
-    if (input.linkedDeviceId !== undefined && input.linkedDeviceId !== null && !isUuid(input.linkedDeviceId)) {
+    if (
+      input.linkedDeviceId !== undefined &&
+      input.linkedDeviceId !== null &&
+      !isUuid(input.linkedDeviceId)
+    ) {
       return NextResponse.json({ error: "Invalid linkedDeviceId" }, { status: 400 })
     }
 
-    if (input.relatedSessionId !== undefined && input.relatedSessionId !== null && !isUuid(input.relatedSessionId)) {
+    if (
+      input.relatedSessionId !== undefined &&
+      input.relatedSessionId !== null &&
+      !isUuid(input.relatedSessionId)
+    ) {
       return NextResponse.json({ error: "Invalid relatedSessionId" }, { status: 400 })
     }
 
-    if (input.relatedCommandId !== undefined && input.relatedCommandId !== null && !isUuid(input.relatedCommandId)) {
+    if (
+      input.relatedCommandId !== undefined &&
+      input.relatedCommandId !== null &&
+      !isUuid(input.relatedCommandId)
+    ) {
       return NextResponse.json({ error: "Invalid relatedCommandId" }, { status: 400 })
     }
 
-    const authorUserId = input.authorUserId === undefined
-      ? getAuthUserId(auth)
-      : input.authorUserId
+    const authorUserId =
+      input.authorUserId === undefined ? getAuthUserId(auth) : input.authorUserId
 
     const row = await createLogNote({
       ...input,

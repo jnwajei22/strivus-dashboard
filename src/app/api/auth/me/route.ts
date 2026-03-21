@@ -1,8 +1,6 @@
-// src/app/api/auth/me/route.ts
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/server/auth/session";
 import { getUserPermissions } from "@/lib/server/auth/guards";
-import { touchSession } from "@/lib/server/auth/session";
+import { getSessionUser, touchSession } from "@/lib/server/auth/session";
 
 export async function GET() {
   try {

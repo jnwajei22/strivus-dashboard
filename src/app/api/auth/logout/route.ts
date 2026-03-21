@@ -1,6 +1,5 @@
-// src/app/api/auth/logout/route.ts
 import { NextResponse } from "next/server";
-import { clearCurrentSession } from "@/lib/auth/session";
+import { clearCurrentSession } from "@/lib/server/auth/session";
 
 export async function POST() {
   try {

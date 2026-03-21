@@ -1,97 +1,96 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@/lib/db";
-import { createSession, hashValue } from "@/lib/auth/session";
+import { getUserPermissions } from "@/lib/server/auth/guards";
+import {
+  getAuthUserSummary,
+  getLatestActiveVerificationCode,
+  incrementVerificationAttempt,
+  markUserVerifiedAndTouchLogin,
+  mapAuthUserSummaryToResponse,
+  markVerificationCodeUsed,
+} from "@/lib/server/auth/queries";
+import { createSession } from "@/lib/server/auth/session";
+import { hashValue } from "@/lib/server/auth/tokens";
+import { AUTH_METHODS } from "@/lib/server/auth/types";
+import {
+  AuthValidationError,
+  getClientIpFromHeaders,
+  parseVerifyCodeInput,
+} from "@/lib/server/auth/validators";
 
-const PURPOSE = "login";
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-function getClientIp(req: NextRequest) {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip") ||
-    null
-  );
-}
+const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 14;
+const MAX_VERIFICATION_ATTEMPTS = 10;
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const email = normalizeEmail(String(body.email ?? ""));
-    const code = String(body.code ?? "").trim();
+    const { email, code } = parseVerifyCodeInput(body);
 
-    if (!email || !/^\d{6}$/.test(code)) {
-      return NextResponse.json(
-        { error: "Email and 6-digit code are required" },
-        { status: 400 }
-      );
-    }
+    const record = await getLatestActiveVerificationCode(email);
 
-    const codeHash = hashValue(code);
-
-    const matches = await sql`
-      SELECT id, user_id, email, code_hash, expires_at, used_at, attempt_count
-      FROM verification_codes
-      WHERE lower(email) = ${email}
-        AND purpose = ${PURPOSE}
-        AND used_at IS NULL
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-
-    if (matches.length === 0) {
+    if (!record) {
       return NextResponse.json({ error: "Invalid code" }, { status: 400 });
     }
-
-    const record = matches[0];
 
     if (new Date(record.expires_at).getTime() < Date.now()) {
       return NextResponse.json({ error: "Code expired" }, { status: 400 });
     }
 
-    if (record.attempt_count >= 10) {
+    if (record.attempt_count >= MAX_VERIFICATION_ATTEMPTS) {
       return NextResponse.json(
         { error: "Too many attempts" },
         { status: 400 }
       );
     }
 
+    const codeHash = hashValue(code);
+
     if (record.code_hash !== codeHash) {
-      await sql`
-        UPDATE verification_codes
-        SET attempt_count = attempt_count + 1
-        WHERE id = ${record.id}
-      `;
+      await incrementVerificationAttempt(record.id);
 
       return NextResponse.json({ error: "Invalid code" }, { status: 400 });
     }
 
-    await sql`
-      UPDATE verification_codes
-      SET used_at = now()
-      WHERE id = ${record.id}
-    `;
+    if (!record.user_id) {
+      return NextResponse.json(
+        { error: "Verification record is missing a user" },
+        { status: 500 }
+      );
+    }
 
-    await sql`
-      UPDATE users
-      SET
-        email_verified_at = COALESCE(email_verified_at, now()),
-        last_login_at = now(),
-        updated_at = now()
-      WHERE id = ${record.user_id}
-    `;
+    await markVerificationCodeUsed(record.id);
+    await markUserVerifiedAndTouchLogin(record.user_id);
 
     await createSession(record.user_id, {
-      authMethod: "email_code",
-      ipAddress: getClientIp(req),
+      authMethod: AUTH_METHODS.EMAIL_CODE,
+      ipAddress: getClientIpFromHeaders(req.headers),
       userAgent: req.headers.get("user-agent"),
-      durationMs: 1000 * 60 * 60 * 24 * 14,
+      durationMs: SESSION_DURATION_MS,
     });
 
-    return NextResponse.json({ ok: true });
+    const user = await getAuthUserSummary(record.user_id);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found after verification" },
+        { status: 500 }
+      );
+    }
+
+    const permissions = await getUserPermissions(user.role_id);
+
+    return NextResponse.json({
+      ok: true,
+      user: mapAuthUserSummaryToResponse(user),
+      permissions,
+    });
   } catch (error) {
+    if (error instanceof AuthValidationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+
     console.error("POST /api/auth/verify-code error:", error);
 
     return NextResponse.json(

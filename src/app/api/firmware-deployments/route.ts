@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/server/auth/guards";
-import { PERMISSIONS } from "@/lib/server/auth/permissions";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { mapFirmwareDeployment } from "@/lib/server/firmware/mappers";
 import {
   createFirmwareDeployment,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PERMISSIONS } from "@/lib/server/auth/permissions";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/server/auth/guards";
 import {
   createDevice,
